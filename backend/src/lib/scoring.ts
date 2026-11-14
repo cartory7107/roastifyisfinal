@@ -138,6 +138,42 @@ export function urlPoints(url: string): number {
   return 0;
 }
 
+/** LCP sub-score, 0-100 (spec §9.4). `lcp` in seconds. */
+export function lcpScore(lcpSeconds: number): number {
+  if (lcpSeconds <= 2.5) return 100;
+  if (lcpSeconds <= 4.0) return 100 - ((lcpSeconds - 2.5) / 1.5) * 50;
+  return Math.max(0, 50 - (lcpSeconds - 4.0) * 20);
+}
+
+/** INP sub-score, 0-100 (spec §9.4). `inp` in milliseconds. */
+export function inpScore(inpMs: number): number {
+  if (inpMs <= 200) return 100;
+  if (inpMs <= 500) return 100 - ((inpMs - 200) / 300) * 50;
+  return Math.max(0, 50 - ((inpMs - 500) / 100) * 20);
+}
+
+/** CLS sub-score, 0-100 (spec §9.4). */
+export function clsScore(cls: number): number {
+  if (cls <= 0.1) return 100;
+  if (cls <= 0.25) return 100 - ((cls - 0.1) / 0.15) * 50;
+  return Math.max(0, 50 - (cls - 0.25) * 100);
+}
+
+/** Performance score, max 100 (spec §9.4): 0.40 LCP + 0.30 INP + 0.30 CLS. */
+export function performanceScore(
+  lcpSeconds: number,
+  inpMs: number,
+  cls: number,
+): number {
+  return clamp(
+    0.4 * lcpScore(lcpSeconds) +
+      0.3 * inpScore(inpMs) +
+      0.3 * clsScore(cls),
+    0,
+    100,
+  );
+}
+
 /** On-Page score, max 100 (spec §9.2). */
 export function onPageScore(f: OnPageFacts): number {
   return clamp(

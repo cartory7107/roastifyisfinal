@@ -4,6 +4,7 @@ import { analyzeAiReadiness } from "./analysts/ai-readiness.js";
 import { huntCompetitors } from "./analysts/competitor.js";
 import { classifyNiche, NICHE_FALLBACK } from "./analysts/niche.js";
 import { analyzeOnPage } from "./analysts/on-page.js";
+import { analyzePerformance } from "./analysts/performance.js";
 import { analyzeTechnical } from "./analysts/technical.js";
 import { crawlUrl } from "./crawler/playwright.js";
 import { updateAudit, fetchAudit, type AuditPatch } from "./lib/store.js";
@@ -56,10 +57,11 @@ type AuditStepName =
   | "technical"
   | "ai_readiness"
   | "niche"
+  | "performance"
   | "onpage"
   | "competitor";
 
-/** Phase 5 pipeline: Crawl → [Tech, AI, Niche] ∥ → On-Page → Competitor. */
+/** Phase 6 pipeline: Crawl → [Tech, AI, Niche, Lighthouse] ∥ → On-Page → Competitor. */
 async function execute(auditId: string): Promise<void> {
   const row = await fetchAudit(auditId);
   if (row === null) {
@@ -80,8 +82,9 @@ async function execute(auditId: string): Promise<void> {
     (data) => ({ crawl_data: { target: data, competitors: [] } satisfies CrawlBundle }),
   );
 
-  // B — technical, ai readiness, and niche are independent (spec §5.2).
-  // Niche never throws (falls back), the analysts catch their own errors.
+  // B — technical, ai readiness, niche, and Lighthouse are independent
+  // (spec §5.2/§8.4). Niche never throws (falls back), and the analysts —
+  // including the performance analyst's failure mode — catch their own errors.
   let niche: Niche = NICHE_FALLBACK;
   await Promise.all([
     stage(
@@ -104,6 +107,12 @@ async function execute(auditId: string): Promise<void> {
     ).then((result) => {
       niche = result;
     }),
+    stage(
+      auditId,
+      "performance",
+      () => analyzePerformance(row.target_url),
+      (analysis: CategoryAnalysis) => ({ performance_analysis: analysis }),
+    ),
   ]);
 
   // C — on-page depends on the niche's primary keyword (spec §8.2).
