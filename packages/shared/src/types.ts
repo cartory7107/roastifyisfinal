@@ -55,6 +55,7 @@ export type CrawlData = {
 
   jsonLd: unknown[];
   microdata: boolean;
+  metaRefresh: boolean;
 
   robotsTxt: string | null;
   sitemapXml: string | null;

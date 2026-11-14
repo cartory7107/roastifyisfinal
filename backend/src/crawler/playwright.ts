@@ -66,6 +66,7 @@ type PageSnapshot = {
   externalLinks: string[];
   jsonLd: unknown[];
   microdata: boolean;
+  metaRefresh: boolean;
   origin: string;
 };
 
@@ -245,6 +246,8 @@ async function captureSnapshot(
       externalLinks: Array.from(external),
       jsonLd,
       microdata: document.querySelector("[itemscope]") !== null,
+      metaRefresh:
+        document.querySelector('meta[http-equiv="refresh" i]') !== null,
       origin: location.origin,
     };
   });
@@ -387,6 +390,7 @@ export async function crawlUrl(
 
       jsonLd: snapshot.jsonLd,
       microdata: snapshot.microdata,
+      metaRefresh: snapshot.metaRefresh,
 
       robotsTxt,
       sitemapXml,

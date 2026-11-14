@@ -63,6 +63,7 @@ export const CrawlDataSchema = z.object({
 
   jsonLd: z.array(z.unknown()),
   microdata: z.boolean(),
+  metaRefresh: z.boolean(),
 
   robotsTxt: z.string().nullable(),
   sitemapXml: z.string().nullable(),
