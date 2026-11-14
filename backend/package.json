@@ -8,12 +8,16 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint \"src/**/*.ts\""
+    "lint": "eslint \"src/**/*.ts\"",
+    "test:crawl": "tsx src/scripts/test-crawl.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
+    "@rostify/shared": "workspace:^",
+    "@supabase/supabase-js": "^2.119.0",
     "dotenv": "^16.4.5",
     "fastify": "^4.28.1",
+    "p-limit": "^7.3.3",
     "playwright": "^1.45.3",
     "zod": "^3.23.8"
   },
