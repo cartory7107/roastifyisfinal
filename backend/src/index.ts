@@ -1,6 +1,7 @@
 import "dotenv/config";
 import Fastify, { type FastifyInstance } from "fastify";
 import cors from "@fastify/cors";
+import { auditRoutes } from "./routes/audit.js";
 import { healthRoutes } from "./routes/health.js";
 
 const PORT = Number(process.env.PORT ?? 4000);
@@ -11,6 +12,7 @@ export async function buildServer(): Promise<FastifyInstance> {
 
   await app.register(cors, { origin: true });
   await app.register(healthRoutes);
+  await app.register(auditRoutes);
 
   return app;
 }

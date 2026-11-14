@@ -11,6 +11,7 @@
     "lint": "eslint \"src/**/*.ts\"",
     "test:crawl": "tsx src/scripts/test-crawl.ts",
     "test:technical": "tsx src/scripts/test-technical.ts",
+    "test:onpage": "tsx src/scripts/test-onpage.ts",
     "test:niche": "tsx src/scripts/test-niche.ts"
   },
   "dependencies": {
