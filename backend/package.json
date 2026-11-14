@@ -10,10 +10,12 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint \"src/**/*.ts\"",
     "test:crawl": "tsx src/scripts/test-crawl.ts",
-    "test:technical": "tsx src/scripts/test-technical.ts"
+    "test:technical": "tsx src/scripts/test-technical.ts",
+    "test:niche": "tsx src/scripts/test-niche.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
+    "@google/genai": "^3.3.0",
     "@rostify/shared": "workspace:^",
     "@supabase/supabase-js": "^2.119.0",
     "dotenv": "^16.4.5",
