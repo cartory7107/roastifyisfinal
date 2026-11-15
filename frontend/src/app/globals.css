@@ -33,3 +33,47 @@
     font-feature-settings: "rlig" 1, "calt" 1;
   }
 }
+
+/* ---------- Report ---------- */
+
+/* Category rows link to in-page anchors; keep the heading clear of the top. */
+.report-section {
+  scroll-margin-top: 1.5rem;
+}
+
+/* Keep one section on one printed page where possible. */
+.print-break {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+/* ---------- Print (spec §11 print view / §13 phase 11) ---------- */
+
+@media print {
+  @page {
+    margin: 14mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  /* Drop the shadow ring and the tinted page background so ink stays honest. */
+  .print-break {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    box-shadow: none !important;
+    background: #fff !important;
+  }
+
+  a[href]::after {
+    content: "";
+  }
+}

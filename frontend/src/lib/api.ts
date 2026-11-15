@@ -1,3 +1,5 @@
+import type { AuditPollResponse } from "@rostify/shared";
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
 
@@ -15,9 +17,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
   if (!res.ok) {
     const body = (await res.json().catch(() => null)) as
-      | { message?: string }
+      | { error?: string; message?: string }
       | null;
-    const message = body?.message ?? `Request failed (${res.status})`;
+    const message =
+      body?.error ?? body?.message ?? `Request failed (${res.status})`;
     throw { message, status: res.status } satisfies ApiError;
   }
 
@@ -32,10 +35,5 @@ export async function runAudit(url: string) {
 }
 
 export function getAudit(id: string) {
-  return request<{
-    id: string;
-    status: "pending" | "running" | "completed" | "failed";
-    currentStep: string | null;
-    result: unknown;
-  }>(`/audit/${id}`);
+  return request<AuditPollResponse>(`/audit/${id}`);
 }

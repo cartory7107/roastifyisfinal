@@ -169,12 +169,30 @@ export type CreateAuditResponse = {
   status: AuditStatus;
 };
 
+/** The target page's on-page snapshot, for quoting real copy in the report UI. */
+export type PageSnapshot = {
+  url: string;
+  title: string;
+  metaDescription: string;
+  h1: string[];
+  h2: string[];
+  wordCount: number;
+  statusCode: number;
+};
+
 export type AuditPollResponse = {
   id: string;
   status: AuditStatus;
   currentStep: AuditStep | null;
+  /** The URL the user submitted, shown while the audit is still crawling. */
+  targetUrl: string;
   result: FinalReport | null;
   error: string | null;
+  /** Screenshot UI/UX review shown next to the six scored categories (spec §8.9). */
+  uiux: CategoryAnalysis | null;
+  /** Set once the PDF stage produces a file (spec §13, phase 11). */
+  pdfUrl: string | null;
+  page: PageSnapshot | null;
 };
 
 export type HealthResponse = {

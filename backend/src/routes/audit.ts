@@ -64,12 +64,29 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
       return reply.code(404).send({ error: "Audit not found." });
     }
 
+    const target = row.crawl_data?.target ?? null;
+
     const response: AuditPollResponse = {
       id: row.id,
       status: row.status,
       currentStep: row.current_step,
+      targetUrl: row.target_url,
       result: row.final_report,
       error: row.error_message,
+      uiux: row.uiux_analysis,
+      pdfUrl: row.pdf_url,
+      page:
+        target === null
+          ? null
+          : {
+              url: target.finalUrl,
+              title: target.title,
+              metaDescription: target.metaDescription,
+              h1: target.h1,
+              h2: target.h2,
+              wordCount: target.wordCount,
+              statusCode: target.statusCode,
+            },
     };
     return response;
   });
