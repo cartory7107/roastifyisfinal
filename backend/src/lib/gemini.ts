@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/genai";
+import { createPartFromBase64, GoogleGenAI } from "@google/genai";
 import type { ZodType } from "zod";
 
 import { withRetry } from "./retry.js";
@@ -33,15 +33,32 @@ function getClient(): GoogleGenAI {
   return new GoogleGenAI({ apiKey });
 }
 
+/** One image part for a multimodal request (spec §8.9). */
+export type GeminiImage = {
+  base64: string;
+  mimeType: string;
+};
+
 async function requestJson(
   client: GoogleGenAI,
   model: string,
   prompt: string,
+  images: GeminiImage[] = [],
 ): Promise<string> {
   try {
+    const contents =
+      images.length === 0
+        ? prompt
+        : [
+            prompt,
+            ...images.map((image) =>
+              createPartFromBase64(image.base64, image.mimeType),
+            ),
+          ];
+
     const response = await client.models.generateContent({
       model,
-      contents: prompt,
+      contents,
       config: { responseMimeType: "application/json" },
     });
 
@@ -67,13 +84,14 @@ async function requestJson(
 export async function generateJson<T>(
   prompt: string,
   schema: ZodType<T>,
+  images: GeminiImage[] = [],
 ): Promise<T> {
   const client = getClient();
   const model = process.env.GEMINI_MODEL ?? DEFAULT_MODEL;
 
   return withRetry(
     async () => {
-      const text = await requestJson(client, model, prompt);
+      const text = await requestJson(client, model, prompt, images);
 
       let parsed: unknown;
       try {

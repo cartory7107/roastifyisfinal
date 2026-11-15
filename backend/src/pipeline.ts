@@ -14,6 +14,7 @@ import { analyzeOffPage } from "./analysts/off-page.js";
 import { analyzeOnPage } from "./analysts/on-page.js";
 import { analyzePerformance } from "./analysts/performance.js";
 import { analyzeTechnical } from "./analysts/technical.js";
+import { analyzeVision } from "./analysts/vision.js";
 import { crawlUrl } from "./crawler/playwright.js";
 import { updateAudit, fetchAudit, type AuditPatch } from "./lib/store.js";
 
@@ -70,7 +71,8 @@ type AuditStepName =
   | "competitor"
   | "crawl_competitors"
   | "content"
-  | "offpage";
+  | "offpage"
+  | "vision";
 
 /** Screenshot-safe competitor label: `www.a-b.com` → `a-b.com`. */
 function competitorLabel(url: string): string {
@@ -198,7 +200,8 @@ async function execute(auditId: string): Promise<void> {
     }),
   );
 
-  // F — content and off-page are independent (spec §5.2 stages E2/E3).
+  // F — content, off-page and vision are independent (spec §5.2 stages E2/E3
+  // plus the vision sub-step of §8.9).
   await Promise.all([
     stage(
       auditId,
@@ -211,6 +214,12 @@ async function execute(auditId: string): Promise<void> {
       "offpage",
       () => analyzeOffPage(row.target_url, competitors),
       (analysis: CategoryAnalysis) => ({ offpage_analysis: analysis }),
+    ),
+    stage(
+      auditId,
+      "vision",
+      () => analyzeVision(target, competitorPages),
+      (analysis: CategoryAnalysis) => ({ uiux_analysis: analysis }),
     ),
   ]);
 }

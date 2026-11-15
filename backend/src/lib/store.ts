@@ -33,6 +33,7 @@ export type AuditPatch = Partial<{
   performance_analysis: CategoryAnalysis;
   offpage_analysis: CategoryAnalysis;
   ai_readiness_analysis: CategoryAnalysis;
+  uiux_analysis: CategoryAnalysis;
   final_report: FinalReport;
   pdf_url: string | null;
   error_message: string | null;

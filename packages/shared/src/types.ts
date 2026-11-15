@@ -149,6 +149,8 @@ export type AuditRow = {
   performance_analysis: CategoryAnalysis | null;
   offpage_analysis: CategoryAnalysis | null;
   ai_readiness_analysis: CategoryAnalysis | null;
+  /** Screenshot-based UI/UX review (spec §8.9) — shown alongside the 6 scored categories. */
+  uiux_analysis: CategoryAnalysis | null;
   final_report: FinalReport | null;
   pdf_url: string | null;
   error_message: string | null;

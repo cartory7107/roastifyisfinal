@@ -23,6 +23,7 @@ create table if not exists audits (
   performance_analysis jsonb,
   offpage_analysis jsonb,
   ai_readiness_analysis jsonb,
+  uiux_analysis jsonb,            -- CategoryAnalysis (screenshot/vision review, spec §8.9)
 
   final_report jsonb,             -- FinalReport
   pdf_url text,
@@ -31,6 +32,9 @@ create table if not exists audits (
   created_at timestamptz default now(),
   completed_at timestamptz
 );
+
+-- Existing installs (Phase 1 schema predates the vision analyst).
+alter table audits add column if not exists uiux_analysis jsonb;
 
 create index if not exists audits_status_idx on audits(status);
 

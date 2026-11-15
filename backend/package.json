@@ -15,6 +15,7 @@
     "test:performance": "tsx src/scripts/test-performance.ts",
     "test:content": "tsx src/scripts/test-content.ts",
     "test:offpage": "tsx src/scripts/test-offpage.ts",
+    "test:vision": "tsx src/scripts/test-vision.ts",
     "test:niche": "tsx src/scripts/test-niche.ts"
   },
   "dependencies": {
