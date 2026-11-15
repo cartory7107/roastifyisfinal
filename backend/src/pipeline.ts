@@ -17,6 +17,7 @@ import { synthesizeReport } from "./analysts/synthesizer.js";
 import { analyzeTechnical } from "./analysts/technical.js";
 import { analyzeVision } from "./analysts/vision.js";
 import { crawlUrl } from "./crawler/playwright.js";
+import { renderReportPdf } from "./lib/pdf.js";
 import { updateAudit, fetchAudit, type AuditPatch } from "./lib/store.js";
 
 /** Hard limit per spec §5.3 — anything longer fails with 'Audit timed out'. */
@@ -74,7 +75,8 @@ type AuditStepName =
   | "content"
   | "offpage"
   | "vision"
-  | "synthesize";
+  | "synthesize"
+  | "pdf";
 
 /** Screenshot-safe competitor label: `www.a-b.com` → `a-b.com`. */
 function competitorLabel(url: string): string {
@@ -121,7 +123,7 @@ async function crawlCompetitors(
   return pages;
 }
 
-/** Pipeline: … → On-Page → Competitor → Competitor crawl → [Content ∥ Off-Page ∥ Vision] → Synthesizer. */
+/** Pipeline: … → On-Page → Competitor → Competitor crawl → [Content ∥ Off-Page ∥ Vision] → Synthesizer → PDF. */
 async function execute(auditId: string, startedAt: number): Promise<void> {
   const row = await fetchAudit(auditId);
   if (row === null) {
@@ -250,6 +252,24 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
         durationMs: Date.now() - startedAt,
       }),
     (finalReport) => ({ final_report: finalReport }),
+  );
+
+  // H — PDF of the print view (spec §13, phase 11). The report is already
+  // persisted, so a render/upload failure is logged and the audit still
+  // completes: the UI falls back to the browser's print view.
+  await stage(
+    auditId,
+    "pdf",
+    async () => {
+      try {
+        return await renderReportPdf(auditId);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[pipeline] pdf unavailable for ${auditId}: ${message}`);
+        return null;
+      }
+    },
+    (pdfUrl) => (pdfUrl === null ? {} : { pdf_url: pdfUrl }),
   );
 }
 

@@ -18,9 +18,18 @@ export class ScreenshotUploadError extends Error {
   }
 }
 
+export class ReportUploadError extends Error {
+  constructor(path: string, cause: unknown) {
+    super(`Failed to upload report PDF to Supabase Storage: ${path}`);
+    this.name = "ReportUploadError";
+    this.cause = cause;
+  }
+}
+
 const REQUIRED_KEYS = ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"] as const;
 
 export const SCREENSHOTS_BUCKET = "screenshots";
+export const REPORTS_BUCKET = "reports";
 
 export function getMissingSupabaseKeys(): string[] {
   return REQUIRED_KEYS.filter((key) => !process.env[key]?.trim());
@@ -69,6 +78,33 @@ export async function uploadScreenshot(
 
   if (!data.publicUrl) {
     throw new ScreenshotUploadError(storagePath, "empty public URL");
+  }
+
+  return data.publicUrl;
+}
+
+/**
+ * Upload a rendered report PDF to the `reports` bucket (spec §6:
+ * `reports` — `{audit_id}/report.pdf`) and return its public URL.
+ */
+export async function uploadReportPdf(
+  storagePath: string,
+  pdf: Buffer,
+): Promise<string> {
+  const supabase = getSupabaseAdmin();
+
+  const { error } = await supabase.storage
+    .from(REPORTS_BUCKET)
+    .upload(storagePath, pdf, { contentType: "application/pdf", upsert: true });
+
+  if (error) {
+    throw new ReportUploadError(storagePath, error);
+  }
+
+  const { data } = supabase.storage.from(REPORTS_BUCKET).getPublicUrl(storagePath);
+
+  if (!data.publicUrl) {
+    throw new ReportUploadError(storagePath, "empty public URL");
   }
 
   return data.publicUrl;
