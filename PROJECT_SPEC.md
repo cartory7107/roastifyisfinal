@@ -526,7 +526,8 @@ function jaccardSimilarity(a: Set<string>, b: Set<string>): number {
 Prompt in `prompts/content.ts`:
 
 ```
-You are an E-E-A-T and content strategy expert. Analyze the target website's content quality and identify content gaps vs competitors.
+You are a senior content strategist auditing one page for E-E-A-T, information
+gain and semantic depth. You are auditing, not writing.
 
 TARGET (${url}):
 Title: {title}
@@ -535,26 +536,64 @@ Body (first 2000 words): {bodyText}
 COMPETITORS:
 {for each competitor: name, body first 800 words}
 
-Analyze:
-1. E-E-A-T signals present/missing (Experience, Expertise, Authoritativeness, Trust)
-   - Testimonials, case studies, author bios, credentials
-   - Contact info, privacy policy, terms
-   - Citations, industry mentions
-   Score E-E-A-T from 0-30.
+STEP 1 — INFORMATION GAIN.
+What does the target contain that the competitors do not: original data, a
+first-hand process, specific numbers, dated observations, named examples. If
+the target adds nothing the competitor set already covers, that is the most
+important finding on the page. Length without new information is a liability.
 
-2. Content gaps — what topics/services/sections competitors have that target lacks.
-   Return max 5 gaps.
+STEP 2 — SEMANTIC DEPTH.
+Name the entities, the practitioner predicates, and the entity-attribute-value
+pairs present in the competitor bodies but absent from the target. "Add more
+detail" is not acceptable.
+
+STEP 3 — E-E-A-T (each component scored 0-10, total x 0.75, capped 30).
+  Experience — bio length does not count, demonstrated doing counts.
+    8-10 dated first-person accounts, original photos, specific amounts or
+         versions, what failed before, counterintuitive findings
+    4-6  "in my experience" with no specifics, examples that fit any business
+    1-3  desk-research synthesis, "imagine you are...", bio claiming
+         experience the body never demonstrates
+    Heuristic: count specific, datable, first-person observations. Three or
+    more reads strong. Zero or one reads absent, however good the bio is.
+  Expertise — states where the advice does not apply, explains the why behind
+    each claim, addresses edge cases and trade-offs.
+  Authoritativeness — verifiable author identity, page inside a topical
+    cluster, accurate in-context citations.
+  Trustworthiness — sourced and dated statistics, disclosed commercial
+    relationships, methodology stated, last-updated date backed by real edits.
+  Red flags that reduce Trustworthiness: Person schema with an author bio that
+  demonstrates nothing; review schema with no visible review text; FAQ
+  questions phrased as keyword strings; credentials irrelevant to the topic.
+
+STEP 4 — CONTENT GAPS.
+Name topic, competitor hostnames covering it, and why it matters for this
+business. Max 5. No gap the target already covers.
+
+SEVERITY:
+  critical — the page cannot compete as written
+  high     — a missing E-E-A-T component or a major topic gap
+  medium   — a partial gap or inconsistent signal
+  low      — polish
+Do not return everything as high.
+
+{ANTI_SLOP_RULES from prompts/anti-slop.ts — evidence rules, banned
+vocabulary, banned phrases, banned structural patterns}
 
 OUTPUT strict JSON (no markdown):
 {
   "eeat_score": <0-30 integer>,
   "eeat_findings": [
-    { "severity": "high"|"medium"|"low", "issue": "...", "detail": "...", "recommendation": "..." }
+    { "severity": "critical"|"high"|"medium"|"low", "issue": "...", "detail": "...", "recommendation": "..." }
   ],
   "content_gaps": [
     { "topic": "...", "seenOn": ["domain1", "domain2"], "why": "..." }
   ]
 }
+
+"issue" is a claim about one specific element, max 90 characters. "detail"
+quotes or locates the evidence in the input. "recommendation" names the
+change, not the goal.
 ```
 
 **Content completeness score:**
@@ -832,24 +871,42 @@ Body: { q: "...", num: 10, gl: "bd", hl: "en" }
 **Prompt in `prompts/vision.ts`:**
 
 ```
-You are a UI/UX auditor with vision. Compare the target mobile screenshot against competitors' mobile screenshots.
+You are auditing the mobile first screen of one site against its competitors.
+The screenshots are attached in the stated order; image 1 is the target.
 
-Evaluate:
-- Visual hierarchy (is primary CTA obvious in the first screen?)
-- Trust signals (testimonials, badges, guarantees visible?)
-- First impression / professionalism
-- Mobile usability (font size, tap targets, clutter, readability)
+Every judgement must name what can be seen: the element, roughly where it
+sits, its relative size, and the words on it.
+  Finding:      "the primary CTA 'Get a quote' sits in the top third at
+                 roughly 48px tall but carries the same weight as nav links"
+  Not a finding: "improve visual hierarchy"
+
+Assess:
+- First screen — in two seconds, can a visitor tell what this business sells
+  and what to do next. Say what is seen first, second, then third.
+- Calls to action — how many compete above the fold, does one dominate.
+- Trust — name every trust element visible (badge, review count, guarantee,
+  client logo, phone, address), or state that none are.
+- Mobile usability — font size, tap target size, line length, density,
+  referencing specific elements.
+- Gap — what a competitor shows in its first screen that this one does not.
+
+Score 0-100. Above 80 reads as a site you would trust with a card number.
+50-70 has the elements but buries them. Below 50, the visitor cannot tell what
+is being sold.
+
+{ANTI_SLOP_RULES from prompts/anti-slop.ts}
 
 OUTPUT strict JSON:
 {
   "score": <0-100 integer>,
   "findings": [
-    { "severity": "high"|"medium"|"low", "issue": "...", "detail": "...", "recommendation": "..." }
+    { "severity": "critical"|"high"|"medium"|"low", "issue": "...", "detail": "...", "recommendation": "..." }
   ],
-  "summary": "2-3 sentence summary"
+  "summary": "2-3 sentence summary naming the strongest and weakest element on screen"
 }
 
-Max 5 findings. Score should reflect visual quality vs competitors.
+Max 5 findings. "issue" is under 90 characters and names an element. "detail"
+describes what is visible. "recommendation" names the change.
 ```
 
 **Score:** LLM returns 0-100; clamped to 0-100. **No further computation.**
@@ -867,7 +924,11 @@ Max 5 findings. Score should reflect visual quality vs competitors.
 **Prompt in `prompts/synthesizer.ts`:**
 
 ```
-You are a report writer for an SEO agency pitching to a client. Given the audit results, write a concise executive summary.
+You are a senior SEO consultant writing the opening assessment of an audit
+report. The reader owns the site, not another SEO. They will give this one page
+of attention and it has to earn the rest of the document.
+
+You are not re-scoring anything. Do not reference a metric not in this input.
 
 INPUT:
 URL: {url}
@@ -882,13 +943,39 @@ Scores:
   AI Readiness: {ai_readiness.score}
 
 Top findings per category:
-{for each category: bullet list of top 2-3 findings}
+{for each category: bullet list of top 3 findings}
+
+WHAT THE SUMMARY HAS TO DO
+1. Name the site's condition in the first sentence, in language a
+   non-specialist understands. Give the number, then say what it means for
+   this business, not what it means for a search engine.
+2. Name the two or three findings costing the most and say what each costs.
+   A finding with no consequence attached is filler.
+3. If the categories disagree badly, one strong and one weak, say so. That
+   pattern is diagnostic and usually the most useful observation in the report.
+4. Close with what changes first. Concrete, not directional.
+
+WHAT IT MUST NOT DO
+- No "in today's competitive landscape", no "presents both challenges and
+  opportunities".
+- Do not list the category scores back at the reader. The table is on the page.
+- Do not cite anything this audit does not measure: keyword volumes, traffic
+  estimates, backlink counts, ranking positions, revenue.
+- Do not soften. A 34/100 is a site that is not ranking. Write it as that.
+
+TOP PRIORITIES
+Exactly 3, ordered by business impact — not by points available and not by
+category order. A one-line fix that unblocks a sale outranks a twenty-point
+technical tidy-up no visitor ever sees. Each "why" states the mechanism: what
+changes for the business once this is fixed.
+
+{ANTI_SLOP_RULES from prompts/anti-slop.ts}
 
 OUTPUT strict JSON:
 {
-  "executive_summary": "3-4 sentences, agency-pitch tone, highlight the biggest issues and the biggest opportunities",
+  "executive_summary": "3-4 sentences. Sentence one is the condition. Then cost, then the first move.",
   "top_priorities": [
-    { "title": "short priority", "category": "technical"|"onpage"|"content"|"performance"|"offpage"|"ai_readiness", "why": "1 sentence" }
+    { "title": "the change, under 70 characters", "category": "technical"|"onpage"|"content"|"performance"|"offpage"|"ai_readiness", "why": "1 sentence naming the mechanism" }
   ]
 }
 
