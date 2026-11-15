@@ -13,6 +13,7 @@ import { classifyNiche, NICHE_FALLBACK } from "./analysts/niche.js";
 import { analyzeOffPage } from "./analysts/off-page.js";
 import { analyzeOnPage } from "./analysts/on-page.js";
 import { analyzePerformance } from "./analysts/performance.js";
+import { synthesizeReport } from "./analysts/synthesizer.js";
 import { analyzeTechnical } from "./analysts/technical.js";
 import { analyzeVision } from "./analysts/vision.js";
 import { crawlUrl } from "./crawler/playwright.js";
@@ -72,7 +73,8 @@ type AuditStepName =
   | "crawl_competitors"
   | "content"
   | "offpage"
-  | "vision";
+  | "vision"
+  | "synthesize";
 
 /** Screenshot-safe competitor label: `www.a-b.com` → `a-b.com`. */
 function competitorLabel(url: string): string {
@@ -119,8 +121,8 @@ async function crawlCompetitors(
   return pages;
 }
 
-/** Phase 7 pipeline: … → On-Page → Competitor → Competitor crawl → [Content ∥ Off-Page]. */
-async function execute(auditId: string): Promise<void> {
+/** Pipeline: … → On-Page → Competitor → Competitor crawl → [Content ∥ Off-Page ∥ Vision] → Synthesizer. */
+async function execute(auditId: string, startedAt: number): Promise<void> {
   const row = await fetchAudit(auditId);
   if (row === null) {
     throw new Error(`audit ${auditId} not found`);
@@ -145,7 +147,7 @@ async function execute(auditId: string): Promise<void> {
   // (spec §5.2/§8.4). Niche never throws (falls back), and the analysts —
   // including the performance analyst's failure mode — catch their own errors.
   let niche: Niche = NICHE_FALLBACK;
-  await Promise.all([
+  const [technical, aiReadiness, , performance] = await Promise.all([
     stage(
       auditId,
       "technical",
@@ -165,6 +167,7 @@ async function execute(auditId: string): Promise<void> {
       (result) => ({ niche: result }),
     ).then((result) => {
       niche = result;
+      return result;
     }),
     stage(
       auditId,
@@ -175,7 +178,7 @@ async function execute(auditId: string): Promise<void> {
   ]);
 
   // C — on-page depends on the niche's primary keyword (spec §8.2).
-  await stage(
+  const onpage = await stage(
     auditId,
     "onpage",
     () => analyzeOnPage(target, niche),
@@ -202,7 +205,7 @@ async function execute(auditId: string): Promise<void> {
 
   // F — content, off-page and vision are independent (spec §5.2 stages E2/E3
   // plus the vision sub-step of §8.9).
-  await Promise.all([
+  const [content, offpage] = await Promise.all([
     stage(
       auditId,
       "content",
@@ -222,6 +225,32 @@ async function execute(auditId: string): Promise<void> {
       (analysis: CategoryAnalysis) => ({ uiux_analysis: analysis }),
     ),
   ]);
+
+  // G — synthesizer: scores and grade are computed in code; the LLM only
+  // writes the summary and priorities (spec §8.10). The FinalReport is
+  // persisted as `final_report` before the audit is marked completed.
+  await stage(
+    auditId,
+    "synthesize",
+    () =>
+      synthesizeReport({
+        niche,
+        target,
+        competitors,
+        competitorPages,
+        analyses: {
+          technical,
+          onpage,
+          content,
+          performance,
+          offpage,
+          ai_readiness: aiReadiness,
+        },
+        auditedAt: new Date().toISOString(),
+        durationMs: Date.now() - startedAt,
+      }),
+    (finalReport) => ({ final_report: finalReport }),
+  );
 }
 
 /**
@@ -241,7 +270,7 @@ async function runAudit(auditId: string): Promise<void> {
   log(`audit ${auditId} started`);
 
   try {
-    await withTimeout(execute(auditId), AUDIT_TIMEOUT_MS);
+    await withTimeout(execute(auditId, startedAt), AUDIT_TIMEOUT_MS);
     await updateAudit(auditId, {
       status: "completed",
       current_step: null,

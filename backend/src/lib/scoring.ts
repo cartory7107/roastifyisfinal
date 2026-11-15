@@ -3,6 +3,8 @@
  * Analysts collect facts; this module turns facts into deterministic numbers.
  */
 
+import type { Grade } from "@rostify/shared";
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -265,4 +267,35 @@ export function contentScore(f: ContentFacts, llmEeatScore: number): number {
 /** Off-Page score, max 100 from OpenPageRank 0-10 (spec §9.5). */
 export function offPageScore(openPageRank: number): number {
   return clamp(openPageRank * 10, 0, 100);
+}
+
+/** Category weights for the overall score (spec §9.7). Sum = 1.00. */
+export const OVERALL_WEIGHTS = {
+  technical: 0.20,
+  onpage: 0.20,
+  content: 0.20,
+  performance: 0.15,
+  offpage: 0.10,
+  ai_readiness: 0.15,
+} as const;
+
+export type OverallScoreInput = Record<keyof typeof OVERALL_WEIGHTS, number>;
+
+/** Weighted sum of the six category scores (spec §9.7). */
+export function overallScore(scores: OverallScoreInput): number {
+  let sum = 0;
+  for (const [key, weight] of Object.entries(OVERALL_WEIGHTS)) {
+    sum += scores[key as keyof OverallScoreInput] * weight;
+  }
+  return Math.round(clamp(sum, 0, 100));
+}
+
+/** Letter grade from the overall score (spec §9.8). */
+export function grade(score: number): Grade {
+  if (score >= 90) return "A+";
+  if (score >= 80) return "A";
+  if (score >= 70) return "B";
+  if (score >= 60) return "C";
+  if (score >= 40) return "D";
+  return "F";
 }

@@ -16,6 +16,7 @@
     "test:content": "tsx src/scripts/test-content.ts",
     "test:offpage": "tsx src/scripts/test-offpage.ts",
     "test:vision": "tsx src/scripts/test-vision.ts",
+    "test:synthesizer": "tsx src/scripts/test-synthesizer.ts",
     "test:niche": "tsx src/scripts/test-niche.ts"
   },
   "dependencies": {
