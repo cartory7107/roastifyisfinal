@@ -14,6 +14,25 @@ const NEUTRAL_SCORE = 40;
 /** A competitor average this far above the target is a competitive gap. */
 const COMPETITOR_GAP = 2;
 
+/**
+ * What this analyst can and cannot see. No free source exposes a backlink
+ * profile, so authority here is one domain-rank number. The report says that
+ * out loud instead of carrying a claim ("check your anchor text") that nothing
+ * in the pipeline could have measured.
+ */
+const LINK_DATA_COVERAGE = {
+  measured: ["domain_authority"],
+  notMeasured: [
+    "referring_domains",
+    "anchor_text_distribution",
+    "dofollow_ratio",
+    "link_velocity",
+  ],
+} as const;
+
+const COVERAGE_SENTENCE =
+  "Authority is measured by domain rank only: referring domains, anchor text, dofollow ratio and link velocity are not available in this build.";
+
 type DomainRank = { url: string; da: number };
 
 function hostnameOf(url: string): string | null {
@@ -49,16 +68,16 @@ function limitedAnalysis(reason: string): CategoryAnalysis {
       competitorsAvg: null,
       domains: [],
       reason,
+      linkDataCoverage: LINK_DATA_COVERAGE,
     },
   };
 }
 
 function summaryFor(score: number, target: number, competitorsAvg: number): string {
   const head = `Off-Page score ${score}/100 from domain authority ${target}/10.`;
-  if (competitorsAvg > 0) {
-    return `${head} Competitors average ${competitorsAvg.toFixed(1)}/10.`;
-  }
-  return head;
+  const gap =
+    competitorsAvg > 0 ? ` Competitors average ${competitorsAvg.toFixed(1)}/10.` : "";
+  return `${head}${gap} ${COVERAGE_SENTENCE}`;
 }
 
 /**
@@ -162,6 +181,7 @@ export async function analyzeOffPage(
       openPageRank: targetRank,
       competitorsAvg: Number(competitorsAvg.toFixed(2)),
       domains,
+      linkDataCoverage: LINK_DATA_COVERAGE,
     },
   };
 }

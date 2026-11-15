@@ -457,7 +457,15 @@ urlScore (0-10):
 
 ### 8.3 Content Analyst (`analysts/content.ts`) — HYBRID (code + 1 LLM)
 
-**Data source:** `CrawlData.target`, `CrawlData.competitors`.
+**Data source:** `CrawlData.target`, `CrawlData.competitors`, and one live Google
+SERP for the audit's primary keyword (`lib/serper.ts` → `fetchSerpSnapshot`).
+
+The SERP snapshot is optional. It is fetched in parallel with the competitor
+crawl, guarded by `isSerperConfigured()`, and degrades to `null` on any failure —
+a Serper outage costs the intent check, never the audit. `serperSearch()` is
+unchanged for the competitor hunter; `fetchSerpSnapshot()` returns the same
+organic results plus `peopleAlsoAsk` and `relatedSearches`, which arrive in the
+same response and therefore cost nothing extra.
 
 **Sub-scores (max 100):**
 
@@ -536,6 +544,28 @@ Body (first 2000 words): {bodyText}
 COMPETITORS:
 {for each competitor: name, body first 800 words}
 
+SERP (top results for "{primary_keyword}"):
+  1. {hostname} — {title}
+     {snippet}
+  ... (max 5)
+
+PEOPLE ALSO ASK:
+  - {question} ... (max 5)
+
+RELATED SEARCHES:
+  - {query} ... (max 6)
+
+STEP 0 — SEARCH INTENT CHECK.   [omitted entirely when the SERP is null]
+The results above are what Google already treats as the answer to this query.
+Decide whether the target is the same kind of answer before judging how good
+it is.
+- Classify the SERP: informational, commercial, transactional, or local.
+- Classify the target from its title and opening paragraphs.
+- If they disagree, set "intent_mismatch": true and write "intent_detail"
+  naming the format the SERP rewards and what the target delivers.
+- People Also Ask and related searches are evidence of missing sub-questions
+  in STEP 4, never a keyword list to sprinkle.
+
 STEP 1 — INFORMATION GAIN.
 What does the target contain that the competitors do not: original data, a
 first-hand process, specific numbers, dated observations, named examples. If
@@ -582,6 +612,8 @@ vocabulary, banned phrases, banned structural patterns}
 
 OUTPUT strict JSON (no markdown):
 {
+  "intent_mismatch": <true|false>,
+  "intent_detail": "<empty string when intent matches, otherwise one sentence>",
   "eeat_score": <0-30 integer>,
   "eeat_findings": [
     { "severity": "critical"|"high"|"medium"|"low", "issue": "...", "detail": "...", "recommendation": "..." }
@@ -621,6 +653,32 @@ contentScore = clamp(
   contentCompletenessScore,
   0, 100
 )
+```
+
+**Intent finding** — emitted only when the SERP was available and the model set
+`intent_mismatch: true`:
+
+```ts
+{
+  severity: "high",
+  category: "content-intent",
+  issue: "Page type does not match the search intent",
+  detail: intent_detail,   // fallback sentence when the model returns ""
+  recommendation: "Rebuild the page around the format the SERP rewards, or target a query this page's format actually answers.",
+  evidence: { serp_results: <organic result count> }
+}
+```
+
+It is deliberately `high` and not negotiable by the model: a page of the wrong
+format cannot rank on craft, so intent outranks depth and E-E-A-T findings.
+
+**Metrics:**
+
+```ts
+metrics: {
+  searchIntent: "aligned" | "mismatch" | "unmeasured",  // "unmeasured" when serp or llm is null
+  serpResults: number   // organic results seen; 0 when the SERP was unavailable
+}
 ```
 
 **Failure mode:** If LLM call fails after 3 retries, set `eeat_llm_score = 0`, `content_gaps = []`, add finding "Content analysis partially failed — E-E-A-T could not be evaluated".
@@ -727,9 +785,23 @@ comparisonBonus = 0  // no bonus, DA is absolute
 metrics: {
   openPageRank: number,     // 0-10
   competitorsAvg: number,
-  domains: [{ url: string, da: number }]
+  domains: [{ url: string, da: number }],
+  linkDataCoverage: {
+    measured: ["domain_authority"],
+    notMeasured: ["referring_domains", "anchor_text_distribution",
+                  "dofollow_ratio", "link_velocity"]
+  }
 }
 ```
+
+**Known limitation (spec-level, not a bug):** no free source exposes a backlink
+profile. OpenPageRank returns only `page_rank_integer` / `page_rank_decimal`, so
+authority here is one domain-rank number. The report states this in the Off-Page
+summary rather than asking the reader to check anchor text or referring domains
+that nothing in the pipeline could have measured. The seam for a real backlink
+provider (a paid API, or the Common Crawl host-level web graph) is
+`metrics.domains`: add the fields there and delete the caveat sentence from
+`summaryFor`.
 
 **Failure mode:** If OpenPageRank API fails or key missing, set score = 40 (neutral), finding "Off-Page analysis limited — API unavailable".
 
@@ -942,8 +1014,14 @@ Scores:
   Off-Page: {offpage.score}
   AI Readiness: {ai_readiness.score}
 
-Top findings per category:
-{for each category: bullet list of top 3 findings}
+Findings, highest estimated impact first (the number on the left):
+{impact.toFixed(1)}  [{severity}] {Category label} — {issue}: {detail}
+... (max 8, already sorted in code by lib/impact.ts)
+
+IMPACT SCALE
+The number is computed in code as severity × category leverage × scope. It is a
+relative ranking, nothing else. Do not turn it into traffic, revenue, or search
+volume, and do not quote it to the reader.
 
 WHAT THE SUMMARY HAS TO DO
 1. Name the site's condition in the first sentence, in language a
@@ -964,10 +1042,11 @@ WHAT IT MUST NOT DO
 - Do not soften. A 34/100 is a site that is not ranking. Write it as that.
 
 TOP PRIORITIES
-Exactly 3, ordered by business impact — not by points available and not by
-category order. A one-line fix that unblocks a sale outranks a twenty-point
-technical tidy-up no visitor ever sees. Each "why" states the mechanism: what
-changes for the business once this is fixed.
+Exactly 3. Take them from the top of the impact list, in the order shown. Two
+adjacent rows that one fix would clear may be merged, then the next row down is
+taken. A row that was skipped cannot be promoted back, and the list cannot be
+reordered on a hunch. Each "why" states the mechanism: what changes for the
+business once this is fixed.
 
 {ANTI_SLOP_RULES from prompts/anti-slop.ts}
 
@@ -982,15 +1061,31 @@ OUTPUT strict JSON:
 Exactly 3 top_priorities, ordered by impact.
 ```
 
-**Synthesizer does NOT compute scores** — those are already in code.
+**Synthesizer does NOT compute scores** — those are already in code. It also
+does not decide the order: `rankFindings()` produces the impact ranking and the
+prompt may only phrase it.
+
+**Impact score (`lib/impact.ts`):**
+
+```
+impact = SEVERITY_WEIGHT[severity] × CATEGORY_LEVERAGE[category] × scope
+scope  = 1.4 when the finding is site-wide (robots, sitemap, ai-bots, …), else 1.0
+```
+
+This is a relative ranking, not traffic or revenue — no free search-volume
+source exists, so volume is deliberately absent. `impactScore()` is the single
+seam: multiply in a real volume once one is available.
 
 **Failure mode:** If LLM fails → generic fallback:
 ```json
 {
   "executive_summary": "This website scored {overall_score}/100. See detailed findings below.",
-  "top_priorities": []
+  "top_priorities": [ ...filled from the impact ranking... ]
 }
 ```
+
+`fillPriorities()` backfills any shortfall (model failure, or fewer than 3 rows)
+from the ranking in code, so priorities are never empty and never unordered.
 
 ---
 
