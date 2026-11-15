@@ -1,14 +1,14 @@
 "use client";
 
 import type { AuditPollResponse } from "@rostify/shared";
-import { AlertTriangle, ArrowLeft, Clock, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowLeft, Clock, Loader2, RefreshCw } from "lucide-react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import * as React from "react";
 
 import { ProgressSteps } from "@/components/report/ProgressSteps";
 import { ReportView } from "@/components/report/ReportView";
-import { getAudit, type ApiError } from "@/lib/api";
+import { getAudit, runAudit, type ApiError } from "@/lib/api";
 import { hostOf } from "@/lib/report";
 
 const POLL_INTERVAL_MS = 2000;
@@ -17,11 +17,14 @@ const ESTIMATED_SECONDS = 120;
 
 export default function AuditPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const auditId = typeof params.id === "string" ? params.id : params.id[0];
 
   const [data, setData] = React.useState<AuditPollResponse | null>(null);
   const [error, setError] = React.useState<ApiError | null>(null);
   const [elapsed, setElapsed] = React.useState(0);
+  const [retrying, setRetrying] = React.useState(false);
+  const [retryError, setRetryError] = React.useState<string | null>(null);
 
   const isSettled =
     data !== null && (data.status === "completed" || data.status === "failed");
@@ -31,6 +34,14 @@ export default function AuditPage() {
   React.useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
+
+    // A retry reuses this route with a new id, so drop the previous result
+    // instead of showing the old failed audit under the new one.
+    setData(null);
+    setError(null);
+    setElapsed(0);
+    setRetrying(false);
+    setRetryError(null);
 
     async function tick() {
       try {
@@ -66,6 +77,25 @@ export default function AuditPage() {
     return () => clearInterval(interval);
   }, [isSettled]);
 
+  /** Re-run the same URL after a failure (spec §11: failed status + retry). */
+  async function handleRetry() {
+    const target = data?.targetUrl;
+    if (target === undefined || target === "") return;
+
+    setRetrying(true);
+    setRetryError(null);
+
+    try {
+      const { auditId: nextId } = await runAudit(target);
+      router.push(`/audit/${nextId}`);
+    } catch (err) {
+      setRetryError(
+        (err as ApiError).message || "Could not start a new audit. Try again.",
+      );
+      setRetrying(false);
+    }
+  }
+
   if (data !== null && data.status === "completed" && data.result !== null) {
     return (
       <main className="min-h-screen bg-secondary/30">
@@ -83,6 +113,7 @@ export default function AuditPage() {
   const notFound = error?.status === 404 || data?.status === "failed";
   const host = data === null ? null : hostOf(data.targetUrl);
   const remaining = Math.max(0, ESTIMATED_SECONDS - elapsed);
+  const canRetry = data?.status === "failed";
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-2xl flex-col justify-center px-4 py-12 sm:px-6">
@@ -108,12 +139,44 @@ export default function AuditPage() {
               : (data?.error ??
                 "The page could not be audited. This usually means the site blocked our crawler or the URL did not load.")}
           </p>
-          <Link
-            href="/"
-            className="mt-5 inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
-          >
-            Try another URL
-          </Link>
+
+          {canRetry ? (
+            <p className="mt-3 break-all rounded-lg border border-border bg-secondary/40 px-3 py-2 text-xs text-muted-foreground">
+              {data?.targetUrl}
+            </p>
+          ) : null}
+
+          <div className="mt-5 flex flex-wrap items-center gap-2">
+            {canRetry ? (
+              <button
+                type="button"
+                onClick={() => void handleRetry()}
+                disabled={retrying}
+                className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {retrying ? (
+                  <Loader2 aria-hidden className="h-4 w-4 animate-spin" />
+                ) : (
+                  <RefreshCw aria-hidden className="h-4 w-4" />
+                )}
+                {retrying ? "Starting…" : "Run this audit again"}
+              </button>
+            ) : null}
+            <Link
+              href="/"
+              className={
+                canRetry
+                  ? "inline-flex h-9 items-center rounded-md border border-input bg-background px-4 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground"
+                  : "inline-flex h-9 items-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
+              }
+            >
+              Try another URL
+            </Link>
+          </div>
+
+          {retryError === null ? null : (
+            <p className="mt-3 text-xs text-destructive">{retryError}</p>
+          )}
         </section>
       ) : (
         <section className="rounded-2xl border border-border bg-background p-6 shadow-sm sm:p-8">

@@ -18,6 +18,7 @@
     "test:vision": "tsx src/scripts/test-vision.ts",
     "test:synthesizer": "tsx src/scripts/test-synthesizer.ts",
     "test:pdf": "tsx src/scripts/test-pdf.ts",
+    "test:audit": "tsx src/scripts/test-audit.ts",
     "test:niche": "tsx src/scripts/test-niche.ts"
   },
   "dependencies": {

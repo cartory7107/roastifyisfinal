@@ -285,7 +285,8 @@ export function startAudit(auditId: string): void {
   });
 }
 
-async function runAudit(auditId: string): Promise<void> {
+/** Awaitable variant of the pipeline, used by the demo rehearsal script. */
+export async function runAudit(auditId: string): Promise<void> {
   const startedAt = Date.now();
   log(`audit ${auditId} started`);
 

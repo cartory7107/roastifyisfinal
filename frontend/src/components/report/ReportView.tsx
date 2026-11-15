@@ -82,7 +82,15 @@ function verdict(report: FinalReport): { headline: string; subline: string } {
 
 function CompetitorTable({ report }: { report: FinalReport }) {
   const domains = Array.isArray(report.competitors) ? report.competitors : [];
-  if (domains.length === 0) return null;
+  if (domains.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-border bg-secondary/30 px-4 py-6 text-sm leading-relaxed text-muted-foreground">
+        No competitor pages could be captured for this run. Search data may have
+        been unavailable, or the niche returned nothing comparable — the six
+        category scores above are complete either way.
+      </p>
+    );
+  }
 
   const maxDa = Math.max(1, ...domains.map((entry) => entry.da ?? 0));
 
@@ -419,19 +427,22 @@ export function ReportView({
       </SectionCard>
 
       {/* ---------- Screenshots ---------- */}
-      {hasScreenshots ? (
-        <SectionCard
-          id="screenshots"
-          eyebrow="Visual comparison"
-          title="Screenshots"
-          description="What a visitor actually sees on mobile, next to the competition."
-        >
-          <ScreenshotCompare
-            screenshots={report.screenshots}
-            siteHost={host}
-          />
-        </SectionCard>
-      ) : null}
+      <SectionCard
+        id="screenshots"
+        eyebrow="Visual comparison"
+        title="Screenshots"
+        description="What a visitor actually sees on mobile, next to the competition."
+      >
+        {hasScreenshots ? (
+          <ScreenshotCompare screenshots={report.screenshots} siteHost={host} />
+        ) : (
+          <p className="rounded-lg border border-dashed border-border bg-secondary/30 px-4 py-6 text-sm leading-relaxed text-muted-foreground">
+            Screenshots could not be captured for this page — usually a slow or
+            blocked load in the headless browser. Run the audit again to retry
+            the visual capture.
+          </p>
+        )}
+      </SectionCard>
 
       {/* ---------- Methodology ---------- */}
       <SectionCard
