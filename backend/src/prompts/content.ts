@@ -1,11 +1,17 @@
 import type { CrawlData } from "@rostify/shared";
 
+import type { SerpSnapshot } from "../lib/serper.js";
 import { ANTI_SLOP_RULES } from "./anti-slop.js";
 import { firstWords } from "./niche.js";
 
 /** The E-E-A-T prompt reads a long slice of the target, less of each competitor. */
 const TARGET_WORD_LIMIT = 2000;
 const COMPETITOR_WORD_LIMIT = 800;
+
+/** Enough of the SERP to classify intent without burying the page body. */
+const SERP_RESULT_LIMIT = 5;
+const SERP_QUESTION_LIMIT = 5;
+const SERP_RELATED_LIMIT = 6;
 
 function hostnameOf(url: string): string {
   try {
@@ -23,6 +29,36 @@ function competitorBlock(competitor: CrawlData): string {
   Body (first ${COMPETITOR_WORD_LIMIT} words): ${body}`;
 }
 
+function serpBlock(serp: SerpSnapshot): string {
+  const organic = serp.organic
+    .slice(0, SERP_RESULT_LIMIT)
+    .map((result, index) => {
+      const name = hostnameOf(result.link);
+      return `  ${index + 1}. ${name} — ${result.title}
+     ${result.snippet}`;
+    })
+    .join("\n");
+
+  const questions = serp.peopleAlsoAsk
+    .slice(0, SERP_QUESTION_LIMIT)
+    .map((item) => `  - ${item.question}`)
+    .join("\n");
+
+  const related = serp.relatedSearches
+    .slice(0, SERP_RELATED_LIMIT)
+    .map((query) => `  - ${query}`)
+    .join("\n");
+
+  return `SERP (top results for "${serp.query}"):
+${organic.length === 0 ? "  (no organic results were returned)" : organic}
+
+PEOPLE ALSO ASK:
+${questions.length === 0 ? "  (none returned)" : questions}
+
+RELATED SEARCHES:
+${related.length === 0 ? "  (none returned)" : related}`;
+}
+
 /**
  * Content prompt (spec §8.3): information gain, semantic depth, E-E-A-T and
  * competitor content gaps. Returns strict JSON so `generateJson` can validate
@@ -31,16 +67,36 @@ function competitorBlock(competitor: CrawlData): string {
  * Methodology ported from the `page-audit` skill: the E-E-A-T block is a
  * scored rubric with bands rather than a checklist of assets, and the gap
  * analysis names missing entities instead of asking for "more detail".
+ *
+ * `serp` is the live Google result set for the page's query. It is null when
+ * Serper is unconfigured or the lookup failed; the intent check is then
+ * skipped rather than guessed.
  */
 export function buildContentPrompt(
   target: CrawlData,
   competitors: CrawlData[],
+  serp: SerpSnapshot | null = null,
 ): string {
   const body = firstWords(target.bodyText, TARGET_WORD_LIMIT);
   const competitorsSection =
     competitors.length === 0
       ? "(no competitors were crawled — score the target on its own and return no gaps)"
       : competitors.map(competitorBlock).join("\n\n");
+
+  const serpSection =
+    serp === null
+      ? ""
+      : `
+${serpBlock(serp)}
+
+STEP 0 — SEARCH INTENT CHECK.
+The results above are what Google already treats as the answer to this query. Decide whether the target is the same kind of answer before judging how good it is.
+- Classify the SERP: informational (explain, how-to, compare, definition), commercial (pricing, service page, "best X"), transactional (buy, book, sign up), or local (near me, city, hours, directions).
+- Classify the target from its title and its opening paragraphs: the format it is and the promise it makes.
+- If the two disagree, set "intent_mismatch": true and write "intent_detail" naming the format the SERP rewards and what the target actually delivers. State it plainly; a page of the wrong type cannot rank on craft alone.
+- If they agree, set "intent_mismatch": false and "intent_detail": "".
+- People Also Ask and related searches are the sub-questions this SERP expects answered. Use them in STEP 4 as evidence of missing topics, never as a keyword list to sprinkle.
+`;
 
   return `You are a senior content strategist auditing one page for E-E-A-T, information gain and semantic depth. Fifteen years in organic search. You are auditing, not writing. The reader owns the site and will act on this.
 
@@ -50,7 +106,7 @@ Body (first ${TARGET_WORD_LIMIT} words): ${body}
 
 COMPETITORS:
 ${competitorsSection}
-
+${serpSection}
 STEP 1 — INFORMATION GAIN.
 Compare the target against the competitor bodies above. What does the target contain that they do not: original data, a first-hand process, specific numbers, dated observations, named examples. If the target adds nothing the competitor set already covers, that is the most important finding on this page and it must be stated plainly. Do not reward length. Length without new information is a liability, not an asset.
 
@@ -102,6 +158,8 @@ ${ANTI_SLOP_RULES}
 
 OUTPUT strict JSON (no markdown):
 {
+  "intent_mismatch": <true|false>,
+  "intent_detail": "<empty string when intent matches, otherwise one sentence naming the SERP format and what the target delivers>",
   "eeat_score": <0-30 integer>,
   "eeat_findings": [
     { "severity": "critical"|"high"|"medium"|"low", "issue": "...", "detail": "...", "recommendation": "..." }

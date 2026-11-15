@@ -9,13 +9,27 @@ const DEFAULT_NUM = 10;
 const DEFAULT_GEO = "bd";
 const DEFAULT_LOCALE = "en";
 
+const SerpResultSchema = z.object({
+  link: z.string(),
+  title: z.string().optional(),
+  snippet: z.string().optional(),
+});
+
 const SerperResponseSchema = z.object({
-  organic: z
+  organic: z.array(SerpResultSchema).optional(),
+  peopleAlsoAsk: z
     .array(
       z.object({
-        link: z.string(),
-        title: z.string().optional(),
+        question: z.string().optional(),
         snippet: z.string().optional(),
+        link: z.string().optional(),
+      }),
+    )
+    .optional(),
+  relatedSearches: z
+    .array(
+      z.object({
+        query: z.string().optional(),
       }),
     )
     .optional(),
@@ -29,6 +43,21 @@ export type SerperOrganicResult = {
 
 export type SerperSearchResponse = {
   organic: SerperOrganicResult[];
+};
+
+/** One raw Serper payload, kept unparsed so callers can pick what they need. */
+export type SerperRawResult = z.infer<typeof SerperResponseSchema>;
+
+/**
+ * Everything the content analyst reads off one SERP request (spec §8.3).
+ * Fetching PAA and related searches costs nothing extra — they arrive in the
+ * same response — so they are captured here rather than in a second call.
+ */
+export type SerpSnapshot = {
+  query: string;
+  organic: SerperOrganicResult[];
+  peopleAlsoAsk: Array<{ question: string; snippet: string }>;
+  relatedSearches: string[];
 };
 
 export type SerperErrorCode =
@@ -67,7 +96,7 @@ function isRetryable(err: unknown): boolean {
 async function postSearch(
   query: string,
   num: number,
-): Promise<SerperSearchResponse> {
+): Promise<SerperRawResult> {
   const apiKey = process.env.SERPER_API_KEY;
   if (!apiKey) {
     throw new SerperError("missing_api_key", "SERPER_API_KEY is not set");
@@ -128,13 +157,21 @@ async function postSearch(
     );
   }
 
-  return {
-    organic: (parsed.data.organic ?? []).map((result) => ({
-      link: result.link,
-      title: result.title ?? "",
-      snippet: result.snippet ?? "",
-    })),
-  };
+  return parsed.data;
+}
+
+/** Shared retry envelope: 3 attempts, exponential backoff, 401/403 immediate. */
+async function searchWithRetry(
+  query: string,
+  num: number,
+): Promise<SerperRawResult> {
+  return withRetry(() => postSearch(query, num), {
+    shouldRetry: isRetryable,
+    onRetry: (err, failedAttempt) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(`[serper] attempt ${failedAttempt} failed: ${message}`);
+    },
+  });
 }
 
 /**
@@ -146,12 +183,44 @@ export async function serperSearch(
   options: { num?: number } = {},
 ): Promise<SerperSearchResponse> {
   const num = options.num ?? DEFAULT_NUM;
+  const data = await searchWithRetry(query, num);
 
-  return withRetry(() => postSearch(query, num), {
-    shouldRetry: isRetryable,
-    onRetry: (err, failedAttempt) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.warn(`[serper] attempt ${failedAttempt} failed: ${message}`);
-    },
-  });
+  return {
+    organic: (data.organic ?? []).map((result) => ({
+      link: result.link,
+      title: result.title ?? "",
+      snippet: result.snippet ?? "",
+    })),
+  };
+}
+
+/**
+ * Same request cost as `serperSearch` — the intent signals arrive in the same
+ * payload — but returns the extra fields the content analyst uses to check
+ * whether the page answers what the SERP is actually asking (spec §8.3).
+ */
+export async function fetchSerpSnapshot(
+  query: string,
+  options: { num?: number } = {},
+): Promise<SerpSnapshot> {
+  const num = options.num ?? DEFAULT_NUM;
+  const data = await searchWithRetry(query, num);
+
+  return {
+    query,
+    organic: (data.organic ?? []).map((result) => ({
+      link: result.link,
+      title: result.title ?? "",
+      snippet: result.snippet ?? "",
+    })),
+    peopleAlsoAsk: (data.peopleAlsoAsk ?? [])
+      .map((item) => ({
+        question: (item.question ?? "").trim(),
+        snippet: (item.snippet ?? "").trim(),
+      }))
+      .filter((item) => item.question.length > 0),
+    relatedSearches: (data.relatedSearches ?? [])
+      .map((item) => (item.query ?? "").trim())
+      .filter((query) => query.length > 0),
+  };
 }

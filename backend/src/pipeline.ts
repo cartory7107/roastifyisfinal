@@ -11,13 +11,18 @@ import { huntCompetitors } from "./analysts/competitor.js";
 import { analyzeContent } from "./analysts/content.js";
 import { classifyNiche, NICHE_FALLBACK } from "./analysts/niche.js";
 import { analyzeOffPage } from "./analysts/off-page.js";
-import { analyzeOnPage } from "./analysts/on-page.js";
+import { analyzeOnPage, primaryKeywordOf } from "./analysts/on-page.js";
 import { analyzePerformance } from "./analysts/performance.js";
 import { synthesizeReport } from "./analysts/synthesizer.js";
 import { analyzeTechnical } from "./analysts/technical.js";
 import { analyzeVision } from "./analysts/vision.js";
 import { crawlUrl } from "./crawler/playwright.js";
 import { renderReportPdf } from "./lib/pdf.js";
+import {
+  fetchSerpSnapshot,
+  isSerperConfigured,
+  type SerpSnapshot,
+} from "./lib/serper.js";
 import { updateAudit, fetchAudit, type AuditPatch } from "./lib/store.js";
 
 /** Hard limit per spec §5.3 — anything longer fails with 'Audit timed out'. */
@@ -123,6 +128,24 @@ async function crawlCompetitors(
   return pages;
 }
 
+/**
+ * Live Google SERP for the audit's primary keyword (spec §8.3). Serper being
+ * unconfigured, or the lookup failing, yields null: content analysis then
+ * reports search intent as unmeasured instead of failing the audit.
+ */
+async function fetchSerpFor(niche: Niche): Promise<SerpSnapshot | null> {
+  if (!isSerperConfigured()) return null;
+
+  const query = primaryKeywordOf(niche);
+  try {
+    return await fetchSerpSnapshot(query);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[pipeline] SERP snapshot unavailable: ${message}`);
+    return null;
+  }
+}
+
 /** Pipeline: … → On-Page → Competitor → Competitor crawl → [Content ∥ Off-Page ∥ Vision] → Synthesizer → PDF. */
 async function execute(auditId: string, startedAt: number): Promise<void> {
   const row = await fetchAudit(auditId);
@@ -195,15 +218,20 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
     (list) => ({ competitors: list }),
   );
 
-  // E — crawl each competitor in parallel, then persist the full bundle.
-  const competitorPages = await stage(
-    auditId,
-    "crawl_competitors",
-    () => crawlCompetitors(auditId, competitors),
-    (pages) => ({
-      crawl_data: { target, competitors: pages } satisfies CrawlBundle,
-    }),
-  );
+  // E — crawl each competitor in parallel and, independently, pull the live
+  // SERP for the audit's primary keyword. The SERP never blocks the crawl and
+  // degrades to null, so a Serper outage costs the intent check only.
+  const [competitorPages, serp] = await Promise.all([
+    stage(
+      auditId,
+      "crawl_competitors",
+      () => crawlCompetitors(auditId, competitors),
+      (pages) => ({
+        crawl_data: { target, competitors: pages } satisfies CrawlBundle,
+      }),
+    ),
+    fetchSerpFor(niche),
+  ]);
 
   // F — content, off-page and vision are independent (spec §5.2 stages E2/E3
   // plus the vision sub-step of §8.9).
@@ -211,7 +239,7 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
     stage(
       auditId,
       "content",
-      () => analyzeContent(target, competitorPages, niche),
+      () => analyzeContent(target, competitorPages, niche, serp),
       (analysis: CategoryAnalysis) => ({ content_analysis: analysis }),
     ),
     stage(

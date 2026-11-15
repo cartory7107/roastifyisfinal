@@ -10,6 +10,7 @@ import type {
 import { z } from "zod";
 
 import { generateJson, GeminiError } from "../lib/gemini.js";
+import { rankFindings, type RankedFinding } from "../lib/impact.js";
 import { grade as letterGrade, overallScore } from "../lib/scoring.js";
 import { buildSynthesizerPrompt } from "../prompts/synthesizer.js";
 
@@ -60,6 +61,33 @@ export function overallFromAnalyses(analyses: Record<CategoryKey, CategoryAnalys
 }
 
 /**
+ * Backfills priorities from the impact ranking when the model returns fewer
+ * than three, or fails outright. The model may phrase a priority; the order
+ * and every fallback row come from the ranking computed in code (spec §8.10).
+ */
+function fillPriorities(
+  given: TopPriority[],
+  ranked: RankedFinding[],
+): TopPriority[] {
+  const filled = given.slice(0, PRIORITY_COUNT);
+
+  for (const row of ranked) {
+    if (filled.length >= PRIORITY_COUNT) break;
+    const issue = row.finding.issue.toLowerCase();
+    if (filled.some((priority) => priority.title.toLowerCase() === issue)) {
+      continue;
+    }
+    filled.push({
+      title: row.finding.issue,
+      category: row.category,
+      why: row.finding.recommendation,
+    });
+  }
+
+  return filled;
+}
+
+/**
  * One LLM call for prose only (spec §8.10). Scores are never taken from the
  * model; on failure the documented generic fallback is used (spec §8.10).
  */
@@ -69,15 +97,23 @@ async function summarize(
   analyses: Record<CategoryKey, CategoryAnalysis>,
   overall: number,
   grade: Grade,
+  rankedFindings: RankedFinding[],
 ): Promise<{ executive_summary: string; top_priorities: TopPriority[] }> {
   const fallback = {
     executive_summary: `This website scored ${overall}/100. See detailed findings below.`,
-    top_priorities: [] as TopPriority[],
+    top_priorities: fillPriorities([], rankedFindings),
   };
 
   try {
     const result = await generateJson(
-      buildSynthesizerPrompt({ url, niche, categoryScores: analyses, overall, grade }),
+      buildSynthesizerPrompt({
+        url,
+        niche,
+        categoryScores: analyses,
+        overall,
+        grade,
+        rankedFindings,
+      }),
       SummaryLlmSchema,
     );
 
@@ -86,7 +122,7 @@ async function summarize(
 
     return {
       executive_summary: summary,
-      top_priorities: (result.top_priorities ?? []).slice(0, PRIORITY_COUNT),
+      top_priorities: fillPriorities(result.top_priorities ?? [], rankedFindings),
     };
   } catch (err) {
     const message = err instanceof GeminiError ? err.message : String(err);
@@ -118,6 +154,7 @@ function competitorRows(
  */
 export async function synthesizeReport(input: SynthesizerInput): Promise<FinalReport> {
   const { overall, grade } = overallFromAnalyses(input.analyses);
+  const rankedFindings = rankFindings(input.analyses);
 
   const { executive_summary, top_priorities } = await summarize(
     input.target.finalUrl,
@@ -125,6 +162,7 @@ export async function synthesizeReport(input: SynthesizerInput): Promise<FinalRe
     input.analyses,
     overall,
     grade,
+    rankedFindings,
   );
 
   return {

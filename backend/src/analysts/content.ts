@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import { generateJson, GeminiError } from "../lib/gemini.js";
 import { sortBySeverity } from "../lib/findings.js";
+import type { SerpSnapshot } from "../lib/serper.js";
 import {
   clamp,
   contentScore,
@@ -28,6 +29,8 @@ const KEYWORD_HEAD_WORDS = 200;
 const SeveritySchema = z.enum(["critical", "high", "medium", "low"]);
 
 const ContentLlmSchema = z.object({
+  intent_mismatch: z.boolean().optional(),
+  intent_detail: z.string().optional(),
   eeat_score: z.number(),
   eeat_findings: z
     .array(
@@ -178,11 +181,16 @@ function summaryFor(
  * one LLM call supplies E-E-A-T (0-30) and the content gaps.
  * On LLM failure the E-E-A-T score is 0, gaps are empty, and a
  * "partially failed" finding is added (spec §8.3 failure mode).
+ *
+ * `serp` is the live Google result set for the page's query. When it is null
+ * (Serper unconfigured, lookup failed) the intent check is skipped and reported
+ * as unmeasured rather than assumed aligned.
  */
 export async function analyzeContent(
   target: CrawlData,
   competitors: CrawlData[],
   niche: Niche | null,
+  serp: SerpSnapshot | null = null,
 ): Promise<CategoryAnalysis> {
   const primaryKeyword = primaryKeywordOf(niche);
   const keyword = primaryKeyword.toLowerCase();
@@ -192,7 +200,10 @@ export async function analyzeContent(
   let llm: ContentLlmResult | null = null;
   let llmError: string | null = null;
   try {
-    llm = await generateJson(buildContentPrompt(target, competitors), ContentLlmSchema);
+    llm = await generateJson(
+      buildContentPrompt(target, competitors, serp),
+      ContentLlmSchema,
+    );
   } catch (err) {
     llmError = err instanceof GeminiError ? err.message : String(err);
     console.warn(`[content] LLM analysis failed: ${llmError}`);
@@ -241,6 +252,22 @@ export async function analyzeContent(
     });
   }
 
+  if (llm?.intent_mismatch === true) {
+    const detail = (llm.intent_detail ?? "").trim();
+    findings.push({
+      severity: "high",
+      category: "content-intent",
+      issue: "Page type does not match the search intent",
+      detail:
+        detail.length > 0
+          ? detail
+          : "The live SERP rewards a different page format than the one this page delivers.",
+      recommendation:
+        "Rebuild the page around the format the SERP rewards, or target a query this page's format actually answers.",
+      evidence: { serp_results: serp === null ? 0 : serp.organic.length },
+    });
+  }
+
   findings.push(...codeFindings(facts, competitors.length));
 
   const sorted = sortBySeverity(findings);
@@ -263,6 +290,13 @@ export async function analyzeContent(
       gapsCount: contentGaps.length,
       contentGaps,
       competitorsAnalyzed: competitors.length,
+      searchIntent:
+        serp === null || llm === null
+          ? ("unmeasured" as const)
+          : llm.intent_mismatch === true
+            ? ("mismatch" as const)
+            : ("aligned" as const),
+      serpResults: serp === null ? 0 : serp.organic.length,
       subscores: subScores,
     },
   };

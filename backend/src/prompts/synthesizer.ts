@@ -1,10 +1,10 @@
 import type { CategoryAnalysis, CategoryKey, Grade, Niche } from "@rostify/shared";
 
-import { sortBySeverity } from "../lib/findings.js";
+import type { RankedFinding } from "../lib/impact.js";
 import { ANTI_SLOP_RULES } from "./anti-slop.js";
 
-/** How many findings per category the synthesizer prompt shows (spec §8.10). */
-const TOP_FINDINGS = 3;
+/** How many impact-ranked findings the synthesizer prompt shows (spec §8.10). */
+const IMPACT_FINDINGS = 8;
 
 const CATEGORY_LABELS: Record<CategoryKey, string> = {
   technical: "Technical",
@@ -21,18 +21,9 @@ export type SynthesizerPromptInput = {
   overall: number;
   grade: Grade;
   categoryScores: Record<CategoryKey, CategoryAnalysis>;
+  /** Every finding, highest impact first (computed in `lib/impact.ts`). */
+  rankedFindings: RankedFinding[];
 };
-
-function categoryBlock(key: CategoryKey, analysis: CategoryAnalysis): string {
-  const findings = sortBySeverity(analysis.findings)
-    .slice(0, TOP_FINDINGS)
-    .map((finding) => `    - [${finding.severity}] ${finding.issue}: ${finding.detail}`);
-
-  return [
-    `  ${CATEGORY_LABELS[key]}: ${analysis.score}`,
-    findings.length === 0 ? "    - no findings" : findings.join("\n"),
-  ].join("\n");
-}
 
 /**
  * Synthesizer prompt (spec §8.10): the executive summary and top priorities.
@@ -44,8 +35,12 @@ function categoryBlock(key: CategoryKey, analysis: CategoryAnalysis): string {
  * audit does not measure.
  */
 export function buildSynthesizerPrompt(input: SynthesizerPromptInput): string {
-  const categories = (Object.keys(CATEGORY_LABELS) as CategoryKey[])
-    .map((key) => categoryBlock(key, input.categoryScores[key]))
+  const ranked = input.rankedFindings
+    .slice(0, IMPACT_FINDINGS)
+    .map(
+      (row) =>
+        `  ${row.impact.toFixed(1)}  [${row.finding.severity}] ${CATEGORY_LABELS[row.category]} — ${row.finding.issue}: ${row.finding.detail}`,
+    )
     .join("\n");
 
   return `You are a senior SEO consultant writing the opening assessment of an audit report. The reader owns the site, not another SEO. They will give this one page of attention and it has to earn the rest of the document.
@@ -64,8 +59,13 @@ Scores:
   Off-Page: ${input.categoryScores.offpage.score}
   AI Readiness: ${input.categoryScores.ai_readiness.score}
 
-Top findings per category:
-${categories}
+Findings, highest estimated impact first (the number on the left):
+${ranked.length === 0 ? "  (no findings were raised)" : ranked}
+
+IMPACT SCALE
+The number is computed in code as severity x category leverage x scope. It is a
+relative ranking, nothing else. Do not turn it into traffic, revenue, or search
+volume, and do not quote it to the reader.
 
 WHAT THE SUMMARY HAS TO DO
 1. Name the site's condition in the first sentence, in language a non-specialist understands. Give the number, then say what it means for this business, not what it means for a search engine.
@@ -80,7 +80,7 @@ WHAT IT MUST NOT DO
 - Do not soften. A 34/100 is a site that is not ranking. Write it as that.
 
 TOP PRIORITIES
-Exactly 3, ordered by business impact. Not by points available, not by category order. A one-line fix that unblocks a sale outranks a twenty-point technical tidy-up no visitor ever sees.
+Exactly 3. Take them from the top of the impact list, in the order shown. You may merge two adjacent rows that one fix would clear, then take the next row down. You may never promote a row you skipped and you may never reorder the list on a hunch.
 Each "why" states the mechanism: what changes for the business once this is fixed.
 
 ${ANTI_SLOP_RULES}
