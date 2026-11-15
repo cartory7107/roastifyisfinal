@@ -1,8 +1,16 @@
-import type { CategoryAnalysis, CrawlBundle, Niche } from "@rostify/shared";
+import type {
+  CategoryAnalysis,
+  Competitor,
+  CrawlBundle,
+  CrawlData,
+  Niche,
+} from "@rostify/shared";
 
 import { analyzeAiReadiness } from "./analysts/ai-readiness.js";
 import { huntCompetitors } from "./analysts/competitor.js";
+import { analyzeContent } from "./analysts/content.js";
 import { classifyNiche, NICHE_FALLBACK } from "./analysts/niche.js";
+import { analyzeOffPage } from "./analysts/off-page.js";
 import { analyzeOnPage } from "./analysts/on-page.js";
 import { analyzePerformance } from "./analysts/performance.js";
 import { analyzeTechnical } from "./analysts/technical.js";
@@ -59,9 +67,57 @@ type AuditStepName =
   | "niche"
   | "performance"
   | "onpage"
-  | "competitor";
+  | "competitor"
+  | "crawl_competitors"
+  | "content"
+  | "offpage";
 
-/** Phase 6 pipeline: Crawl → [Tech, AI, Niche, Lighthouse] ∥ → On-Page → Competitor. */
+/** Screenshot-safe competitor label: `www.a-b.com` → `a-b.com`. */
+function competitorLabel(url: string): string {
+  try {
+    return new URL(url).hostname
+      .replace(/^www\./, "")
+      .replace(/[^a-z0-9.-]/gi, "-");
+  } catch {
+    return "competitor";
+  }
+}
+
+/**
+ * Crawl the competitors in parallel (spec §13 phase 7). A competitor that
+ * fails to load is dropped — content and off-page analysis still work with
+ * fewer (or zero) competitors.
+ */
+async function crawlCompetitors(
+  auditId: string,
+  competitors: Competitor[],
+): Promise<CrawlData[]> {
+  const settled = await Promise.allSettled(
+    competitors.map((competitor) =>
+      crawlUrl(competitor.url, {
+        auditId,
+        label: competitorLabel(competitor.url),
+        screenshotMode: "upload",
+      }),
+    ),
+  );
+
+  const pages: CrawlData[] = [];
+  settled.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      pages.push(result.value);
+      return;
+    }
+    const reason =
+      result.reason instanceof Error ? result.reason.message : String(result.reason);
+    console.warn(
+      `[pipeline] competitor crawl failed for ${competitors[index]?.url ?? "unknown"}: ${reason}`,
+    );
+  });
+  return pages;
+}
+
+/** Phase 7 pipeline: … → On-Page → Competitor → Competitor crawl → [Content ∥ Off-Page]. */
 async function execute(auditId: string): Promise<void> {
   const row = await fetchAudit(auditId);
   if (row === null) {
@@ -76,6 +132,7 @@ async function execute(auditId: string): Promise<void> {
     "crawl_target",
     () =>
       crawlUrl(row.target_url, {
+        auditId,
         label: "target",
         screenshotMode: "upload",
       }),
@@ -124,12 +181,38 @@ async function execute(auditId: string): Promise<void> {
   );
 
   // D — competitor hunt (Serper): degrades to [] on failure, never throws.
-  await stage(
+  const competitors = await stage(
     auditId,
     "competitor",
     () => huntCompetitors(niche, row.target_url),
-    (competitors) => ({ competitors }),
+    (list) => ({ competitors: list }),
   );
+
+  // E — crawl each competitor in parallel, then persist the full bundle.
+  const competitorPages = await stage(
+    auditId,
+    "crawl_competitors",
+    () => crawlCompetitors(auditId, competitors),
+    (pages) => ({
+      crawl_data: { target, competitors: pages } satisfies CrawlBundle,
+    }),
+  );
+
+  // F — content and off-page are independent (spec §5.2 stages E2/E3).
+  await Promise.all([
+    stage(
+      auditId,
+      "content",
+      () => analyzeContent(target, competitorPages, niche),
+      (analysis: CategoryAnalysis) => ({ content_analysis: analysis }),
+    ),
+    stage(
+      auditId,
+      "offpage",
+      () => analyzeOffPage(row.target_url, competitors),
+      (analysis: CategoryAnalysis) => ({ offpage_analysis: analysis }),
+    ),
+  ]);
 }
 
 /**

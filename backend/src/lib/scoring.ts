@@ -187,3 +187,82 @@ export function onPageScore(f: OnPageFacts): number {
     100,
   );
 }
+
+export type ContentGap = {
+  topic: string;
+  seenOn: string[];
+  why: string;
+};
+
+export type ContentFacts = {
+  wordCount: number;
+  keywordInFirst100: boolean;
+  keywordInFirst200: boolean;
+  /** Highest Jaccard similarity of 5-word shingles vs any competitor. */
+  maxJaccard: number;
+  /** Year parsed from the copyright line; 0 when none was found. */
+  copyrightYear: number;
+  contentGaps: ContentGap[];
+};
+
+export type ContentSubScores = {
+  /** 0-25. */
+  wordCount: number;
+  /** 0-10. */
+  keywordPlacement: number;
+  /** 0-10. */
+  duplicateAvoidance: number;
+  /** 0-10. */
+  freshness: number;
+  /** 0-15. */
+  completeness: number;
+};
+
+/** Code-side content sub-scores, max 75 of the 100 points (spec §9.3). */
+export function contentSubScores(f: ContentFacts): ContentSubScores {
+  const wordCount = 25 * Math.min(1, f.wordCount / 1000);
+
+  const keywordPlacement = f.keywordInFirst100 ? 10 : f.keywordInFirst200 ? 5 : 0;
+
+  const duplicateAvoidance =
+    f.maxJaccard < 0.2 ? 10 :
+    f.maxJaccard < 0.4 ? 6 :
+    f.maxJaccard < 0.6 ? 2 : 0;
+
+  const currentYear = new Date().getFullYear();
+  const freshness =
+    f.copyrightYear >= currentYear - 1 ? 10 :
+    f.copyrightYear >= currentYear - 2 ? 6 :
+    f.copyrightYear >= currentYear - 3 ? 3 : 0;
+
+  const gapsCount = f.contentGaps.length;
+  const completeness =
+    gapsCount === 0 ? 15 :
+    gapsCount === 1 ? 12 :
+    gapsCount === 2 ? 9 :
+    gapsCount === 3 ? 6 :
+    gapsCount === 4 ? 3 : 0;
+
+  return { wordCount, keywordPlacement, duplicateAvoidance, freshness, completeness };
+}
+
+/** Content score, max 100 (spec §9.3): code sub-scores + LLM E-E-A-T (0-30). */
+export function contentScore(f: ContentFacts, llmEeatScore: number): number {
+  const sub = contentSubScores(f);
+
+  return clamp(
+    sub.wordCount +
+      sub.keywordPlacement +
+      sub.duplicateAvoidance +
+      sub.freshness +
+      sub.completeness +
+      clamp(llmEeatScore, 0, 30),
+    0,
+    100,
+  );
+}
+
+/** Off-Page score, max 100 from OpenPageRank 0-10 (spec §9.5). */
+export function offPageScore(openPageRank: number): number {
+  return clamp(openPageRank * 10, 0, 100);
+}
