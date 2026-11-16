@@ -1,12 +1,34 @@
 import Fastify, { type FastifyInstance } from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  isPocketBaseConfigured: vi.fn(() => true),
-  insertAudit: vi.fn(async () => "rec000000000001"),
-  fetchAudit: vi.fn(),
-  startAudit: vi.fn(),
-}));
+const mocks = vi.hoisted(() => {
+  class BlockedUrlError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "BlockedUrlError";
+    }
+  }
+
+  // Mirrors the protocol rule of the real guard; DNS checks belong to its own
+  // test file, so the route tests never touch the network.
+  const defaultAssertPublicUrl = async (raw: string): Promise<URL> => {
+    const url = new URL(raw);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      throw new BlockedUrlError("URL must use http or https.");
+    }
+    return url;
+  };
+
+  return {
+    isPocketBaseConfigured: vi.fn(() => true),
+    insertAudit: vi.fn(async () => "rec000000000001"),
+    fetchAudit: vi.fn(),
+    startAudit: vi.fn(),
+    assertPublicUrl: vi.fn(defaultAssertPublicUrl),
+    defaultAssertPublicUrl,
+    BlockedUrlError,
+  };
+});
 
 vi.mock("../lib/pb.js", () => ({
   AUDITS_COLLECTION: "audits",
@@ -21,6 +43,11 @@ vi.mock("../lib/store.js", () => ({
 
 vi.mock("../pipeline.js", () => ({ startAudit: mocks.startAudit }));
 
+vi.mock("../lib/url-guard.js", () => ({
+  assertPublicUrl: mocks.assertPublicUrl,
+  BlockedUrlError: mocks.BlockedUrlError,
+}));
+
 const { auditRoutes } = await import("./audit.js");
 
 async function buildApp(): Promise<FastifyInstance> {
@@ -32,6 +59,8 @@ async function buildApp(): Promise<FastifyInstance> {
 beforeEach(() => {
   mocks.isPocketBaseConfigured.mockReturnValue(true);
   mocks.insertAudit.mockResolvedValue("rec000000000001");
+  mocks.assertPublicUrl.mockReset();
+  mocks.assertPublicUrl.mockImplementation(mocks.defaultAssertPublicUrl);
 });
 
 describe("POST /audit", () => {
@@ -76,6 +105,25 @@ describe("POST /audit", () => {
     });
 
     expect(response.statusCode).toBe(400);
+    expect(mocks.insertAudit).not.toHaveBeenCalled();
+
+    await app.close();
+  });
+
+  it("returns 400 with the guard message for a blocked url", async () => {
+    const app = await buildApp();
+    mocks.assertPublicUrl.mockRejectedValueOnce(
+      new mocks.BlockedUrlError("URL host must be a public address."),
+    );
+
+    const response = await app.inject({
+      method: "POST",
+      url: "/audit",
+      payload: { url: "http://169.254.169.254/latest/meta-data/" },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "URL host must be a public address." });
     expect(mocks.insertAudit).not.toHaveBeenCalled();
 
     await app.close();

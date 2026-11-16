@@ -7,14 +7,28 @@ import rateLimit from "@fastify/rate-limit";
 
 import { auditRoutes } from "./routes/audit.js";
 import { healthRoutes } from "./routes/health.js";
-import { allowedOrigins, assertBootConfig, env, isProduction } from "./lib/env.js";
+import {
+  allowedOrigins,
+  assertBootConfig,
+  env,
+  hasPocketBaseConfig,
+  isProduction,
+} from "./lib/env.js";
+import { registerErrorHandling } from "./lib/errors.js";
+import { failInterruptedAudits } from "./lib/store.js";
 
 export async function buildServer(): Promise<FastifyInstance> {
   const app = Fastify({
-    logger: { level: isProduction ? "info" : "debug" },
+    logger:
+      env.NODE_ENV === "test" ? false : { level: isProduction ? "info" : "debug" },
     bodyLimit: env.BODY_LIMIT_BYTES,
     trustProxy: env.TRUST_PROXY,
   });
+
+  // Must be set before any plugin is registered: a child context inherits the
+  // handler that exists when it boots. Registering routes first left Fastify's
+  // default error shape in place for body-parse failures.
+  registerErrorHandling(app);
 
   // Security headers for the JSON API; the HTML is served by the frontend app,
   // so a CSP here would only break the Swagger-less JSON responses.
@@ -49,6 +63,17 @@ async function start(): Promise<void> {
 
   const app = await buildServer();
 
+  if (hasPocketBaseConfig) {
+    try {
+      const recovered = await failInterruptedAudits();
+      if (recovered > 0) {
+        app.log.warn({ recovered }, "marked interrupted audits as failed");
+      }
+    } catch (err) {
+      app.log.error({ err }, "could not recover interrupted audits");
+    }
+  }
+
   const shutdown = async (signal: string): Promise<void> => {
     app.log.info({ signal }, "shutting down");
     try {
@@ -78,4 +103,7 @@ async function start(): Promise<void> {
   }
 }
 
-void start();
+// `buildServer()` stays importable for tests; only a real process boots.
+if (process.env.NODE_ENV !== "test") {
+  void start();
+}

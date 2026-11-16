@@ -130,6 +130,36 @@ export async function fetchAudit(id: string): Promise<AuditRow | null> {
 }
 
 /**
+ * Startup recovery: a crash or restart leaves rows stuck in `pending`/`running`
+ * because the in-process pipeline is gone. Marking them failed stops the client
+ * from polling a status that can never change.
+ */
+export async function failInterruptedAudits(
+  reason = "Interrupted by a server restart",
+): Promise<number> {
+  try {
+    const pb = await getPocketBase();
+    const records = (await pb.collection(AUDITS_COLLECTION).getFullList({
+      filter: 'status = "pending" || status = "running"',
+    })) as AuditRecord[];
+
+    const completedAt = new Date().toISOString();
+    for (const record of records) {
+      await pb.collection(AUDITS_COLLECTION).update(String(record.id), {
+        status: "failed",
+        current_step: "",
+        completed_at: completedAt,
+        error_message: reason,
+      });
+    }
+
+    return records.length;
+  } catch (err) {
+    throw new AuditStoreError("recover", err);
+  }
+}
+
+/**
  * Writes are read-merge-write against the record's `payload` JSON, and the
  * pipeline updates several analyses in parallel (technical/ai-readiness/niche/
  * performance, then content/off-page/vision). Without serialization those

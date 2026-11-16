@@ -40,6 +40,19 @@ const h = vi.hoisted(() => {
         state.updateCalls.push({ id, fields });
         return structuredClone(record);
       },
+      getFullList: async (options?: { filter?: string }) => {
+        await sleep(state.delayMs);
+        const filter = options?.filter ?? "";
+        const wantsInterrupted =
+          filter.includes('"pending"') && filter.includes('"running"');
+        const rows = wantsInterrupted
+          ? [...records.values()].filter(
+              (record) =>
+                record.status === "pending" || record.status === "running",
+            )
+          : [...records.values()];
+        return rows.map((record) => structuredClone(record));
+      },
     }),
   };
 
@@ -51,9 +64,8 @@ vi.mock("./pb.js", () => ({
   getPocketBase: async () => h.client,
 }));
 
-const { AuditStoreError, fetchAudit, insertAudit, updateAudit } = await import(
-  "./store.js"
-);
+const { AuditStoreError, failInterruptedAudits, fetchAudit, insertAudit, updateAudit } =
+  await import("./store.js");
 
 beforeEach(() => {
   h.state.records.clear();
@@ -177,5 +189,43 @@ describe("updateAudit", () => {
     await expect(
       updateAudit("missing00000000", { status: "running" }),
     ).rejects.toBeInstanceOf(AuditStoreError);
+  });
+});
+
+describe("failInterruptedAudits", () => {
+  it("marks pending and running audits as failed and leaves the rest alone", async () => {
+    const pendingId = await insertAudit("https://pending.example.com");
+    const runningId = await insertAudit("https://running.example.com");
+    await updateAudit(runningId, { status: "running", current_step: "technical" });
+    const completedId = await insertAudit("https://done.example.com");
+    await updateAudit(completedId, { status: "completed" });
+
+    const recovered = await failInterruptedAudits("Interrupted by a restart");
+
+    expect(recovered).toBe(2);
+    expect(h.state.records.get(pendingId)?.status).toBe("failed");
+    expect(h.state.records.get(runningId)?.status).toBe("failed");
+    expect(h.state.records.get(runningId)?.current_step).toBe("");
+    expect(h.state.records.get(runningId)?.error_message).toBe(
+      "Interrupted by a restart",
+    );
+    expect(h.state.records.get(runningId)?.completed_at).toEqual(
+      expect.any(String),
+    );
+    expect(h.state.records.get(completedId)?.status).toBe("completed");
+    expect(h.state.records.get(completedId)?.error_message).toBeUndefined();
+  });
+
+  it("wraps client failures in AuditStoreError", async () => {
+    const failing = vi.spyOn(h.client, "collection").mockReturnValueOnce({
+      getFullList: async () => {
+        throw new Error("boom");
+      },
+    } as never);
+
+    await expect(failInterruptedAudits()).rejects.toBeInstanceOf(
+      AuditStoreError,
+    );
+    failing.mockRestore();
   });
 });

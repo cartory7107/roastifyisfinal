@@ -100,6 +100,7 @@ pnpm dev        # API on :4000, web on :3000
 | `SERPER_API_KEY`           | no       | –                       | Enables competitor/SERP analysis                             |
 | `OPENPAGERANK_API_KEY`     | no       | –                       | Enables Domain Authority lookups                             |
 | `TRUST_PROXY`              | no       | `false`                 | `true` behind a reverse proxy / PaaS load balancer           |
+| `ALLOW_PRIVATE_HOSTS`      | no       | `false`                 | Allow auditing localhost / private IPs (local dev only)       |
 | `MAX_CONCURRENT_AUDITS`    | no       | `2`                     | Global audit concurrency cap (1–50)                          |
 | `RATE_LIMIT_MAX`           | no       | `5`                     | `POST /audit` requests per window                            |
 | `RATE_LIMIT_WINDOW`        | no       | `1 minute`              | Rate-limit window                                            |
@@ -131,6 +132,20 @@ pnpm dev        # API on :4000, web on :3000
 `GET /audit/:id` is public because it powers the shared report page; writes go through
 the admin-only PocketBase credentials held by the API.
 
+Every error uses one shape, `{ "error": string, "requestId": string }`. Unexpected failures
+are logged with that request id and answered as `500 Internal server error.`, so internal
+details never leak. Deliberate 4xx messages (validation, blocked URL, rate limit) pass through.
+
+### URL safety
+
+`POST /audit` fetches the submitted URL with a real browser, so the server would otherwise be
+an SSRF proxy into its own network. The API resolves the host and rejects loopback, RFC 1918,
+link-local (cloud metadata), CGNAT, multicast, unique-local and NAT64 addresses, plus hostnames
+like `localhost` and URLs with embedded credentials. `ALLOW_PRIVATE_HOSTS=true` is a local-dev
+escape hatch for auditing `localhost`; leave it off in production. The check is best-effort:
+the resolved address is not pinned into Playwright, so DNS rebinding can still slip through.
+Run the API with no access to cloud metadata endpoints as defence in depth.
+
 ## How an audit runs
 
 `crawl_target → niche → technical → ai_readiness → performance → competitor →
@@ -140,11 +155,19 @@ Independent stages run in parallel. Progress is persisted on every step, so a cr
 the row inspectable instead of silent. Payload writes are serialised per audit id, which
 prevents parallel stages from overwriting each other's keys.
 
+On boot the API marks any audit left in `pending`/`running` as `failed` with
+`"Interrupted by a server restart"`. The in-process pipeline did not survive the restart, so
+the client would otherwise poll a status that can never change.
+
 ## Testing
 
-- `backend/src/lib/store.test.ts` — payload split, merge, and the write queue that prevents
-  lost updates under concurrent stages.
-- `backend/src/routes/audit.test.ts` — validation, 503 without PocketBase, poll responses.
+- `backend/src/lib/store.test.ts` — payload split, merge, the write queue that prevents
+  lost updates under concurrent stages, and boot-time recovery of interrupted audits.
+- `backend/src/lib/url-guard.test.ts` — SSRF guard: private/loopback/link-local IPv4 and IPv6,
+  NAT64, credentials, mixed DNS answers, and the local-dev escape hatch.
+- `backend/src/lib/errors.test.ts` — shared error shape, 500 masking, 4xx passthrough.
+- `backend/src/index.test.ts` — `buildServer` wiring: health routes and the 404/error handlers.
+- `backend/src/routes/audit.test.ts` — validation, blocked URLs, 503 without PocketBase, poll responses.
 - `backend/src/routes/health.test.ts` — liveness/readiness including the PocketBase probe.
 - `packages/shared/src/schemas.test.ts` — shared schemas (PocketBase id format, poll payload).
 
@@ -159,6 +182,7 @@ CI (`.github/workflows/ci.yml`) runs install → typecheck → lint → test →
   with `pnpm --filter frontend start`.
 - Set `NODE_ENV=production`, `TRUST_PROXY=true` behind a proxy, and an explicit
   `CORS_ORIGINS`.
+- Keep `ALLOW_PRIVATE_HOSTS` unset so submitted URLs cannot reach your private network.
 - Point your health check at `/health/ready` so a broken database fails the deploy.
 
 ## License

@@ -37,6 +37,13 @@ const EnvSchema = z.object({
   TRUST_PROXY: z
     .preprocess((value) => value === "true" || value === "1", z.boolean())
     .default(false),
+  /**
+   * Local development escape hatch: allow audits of localhost / private
+   * networks. Must stay off in production, where it would enable SSRF.
+   */
+  ALLOW_PRIVATE_HOSTS: z
+    .preprocess((value) => value === "true" || value === "1", z.boolean())
+    .default(false),
   MAX_CONCURRENT_AUDITS: z.coerce.number().int().min(1).max(50).default(2),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(5),
   RATE_LIMIT_WINDOW: z.string().min(1).default("1 minute"),

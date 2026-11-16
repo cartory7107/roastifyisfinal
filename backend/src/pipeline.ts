@@ -161,7 +161,7 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
 
   await updateAudit(auditId, { status: "running" });
 
-  // A — crawl the target (screenshots upload to Supabase Storage).
+  // A — crawl the target (screenshots upload to PocketBase).
   const target = await stage(
     auditId,
     "crawl_target",
@@ -344,7 +344,7 @@ export async function runAudit(auditId: string): Promise<void> {
         completed_at: new Date().toISOString(),
       });
     } catch (storeErr) {
-      // The row could not be marked failed (e.g. Supabase outage) — log it
+      // The row could not be marked failed (e.g. PocketBase outage) — log it
       // so `current_step` inspection can still explain the stall (§18.10).
       console.error(`[pipeline] could not mark ${auditId} failed:`, storeErr);
     }

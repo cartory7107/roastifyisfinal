@@ -1,6 +1,9 @@
 # PROJECT_SPEC.md
 # Autonomous Multi-Agent AI Website Audit — Hackathon MVP (v2: Full 6-Category)
 
+> **Status:** this is the original build spec. Storage has since moved from Supabase to
+> PocketBase (see `README.md`); everything else still describes the shipped behaviour.
+
 > **Single source of truth for the coding agent.**
 > এই ফাইলে যা আছে শুধু সেটাই implement করবে। কোনো feature/framework/lib এই ফাইলে না থাকলে user-কে জিজ্ঞেস করবে, নিজে সিদ্ধান্ত নেবে না।
 > প্রতিটা phase শেষে user-কে report দেবে এবং next phase-এর অনুমতি নেবে।

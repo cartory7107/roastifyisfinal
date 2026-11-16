@@ -6,6 +6,7 @@ import { env } from "../lib/env.js";
 import { AuditIdParamsSchema, CreateAuditRequestSchema } from "../lib/schemas.js";
 import { isPocketBaseConfigured } from "../lib/pb.js";
 import { fetchAudit, insertAudit } from "../lib/store.js";
+import { assertPublicUrl, BlockedUrlError } from "../lib/url-guard.js";
 
 const NOT_CONFIGURED =
   "PocketBase is not configured — copy .env.example to .env and fill POCKETBASE_URL / POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD.";
@@ -32,8 +33,15 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
       }
 
       const { url } = parsed.data;
-      if (!/^https?:\/\//i.test(url)) {
-        return reply.code(400).send({ error: "URL must start with http:// or https://" });
+
+      // The server fetches this URL with a real browser, so reject anything
+      // that points back at its own network (loopback, RFC 1918, metadata).
+      try {
+        await assertPublicUrl(url);
+      } catch (err) {
+        const message =
+          err instanceof BlockedUrlError ? err.message : "URL is not allowed.";
+        return reply.code(400).send({ error: message });
       }
 
       let auditId: string;
