@@ -1,15 +1,15 @@
 import "dotenv/config";
 import { checkBrokenLinks } from "../crawler/broken-links.js";
 import { crawlUrl } from "../crawler/playwright.js";
-import { isSupabaseConfigured } from "../lib/supabase.js";
+import { isPocketBaseConfigured } from "../lib/pb.js";
 
 async function main(): Promise<void> {
   const target = process.argv[2] ?? "https://example.com";
-  const upload = isSupabaseConfigured();
+  const upload = isPocketBaseConfigured();
 
   if (!upload) {
     console.warn(
-      "[warn] Supabase credentials missing: screenshots will be written to backend/.cache/screenshots",
+      "[warn] PocketBase credentials missing: screenshots will be written to backend/.cache/screenshots",
     );
   }
 

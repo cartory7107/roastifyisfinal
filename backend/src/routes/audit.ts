@@ -2,54 +2,63 @@ import type { AuditPollResponse } from "@rostify/shared";
 import type { FastifyPluginAsync } from "fastify";
 
 import { startAudit } from "../pipeline.js";
+import { env } from "../lib/env.js";
 import { AuditIdParamsSchema, CreateAuditRequestSchema } from "../lib/schemas.js";
+import { isPocketBaseConfigured } from "../lib/pb.js";
 import { fetchAudit, insertAudit } from "../lib/store.js";
-import { isSupabaseConfigured } from "../lib/supabase.js";
 
 const NOT_CONFIGURED =
-  "Supabase is not configured — copy .env.example to .env and fill SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY.";
+  "PocketBase is not configured — copy .env.example to .env and fill POCKETBASE_URL / POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD.";
 
 // POST /audit + GET /audit/:id (spec §10)
 export const auditRoutes: FastifyPluginAsync = async (app) => {
-  app.post("/audit", async (request, reply) => {
-    if (!isSupabaseConfigured()) {
-      return reply.code(503).send({ error: NOT_CONFIGURED });
-    }
+  app.post(
+    "/audit",
+    {
+      config: {
+        rateLimit: { max: env.RATE_LIMIT_MAX, timeWindow: env.RATE_LIMIT_WINDOW },
+      },
+    },
+    async (request, reply) => {
+      if (!isPocketBaseConfigured()) {
+        return reply.code(503).send({ error: NOT_CONFIGURED });
+      }
 
-    const parsed = CreateAuditRequestSchema.safeParse(request.body);
-    if (!parsed.success) {
-      return reply
-        .code(400)
-        .send({ error: "Invalid body — expected { url: string } (a valid URL)." });
-    }
+      const parsed = CreateAuditRequestSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply
+          .code(400)
+          .send({ error: "Invalid body — expected { url: string } (a valid URL)." });
+      }
 
-    const { url } = parsed.data;
-    if (!/^https?:\/\//i.test(url)) {
-      return reply.code(400).send({ error: "URL must start with http:// or https://" });
-    }
+      const { url } = parsed.data;
+      if (!/^https?:\/\//i.test(url)) {
+        return reply.code(400).send({ error: "URL must start with http:// or https://" });
+      }
 
-    let auditId: string;
-    try {
-      auditId = await insertAudit(url);
-    } catch (err) {
-      request.log.error(err);
-      return reply.code(500).send({ error: "Failed to create audit row." });
-    }
+      let auditId: string;
+      try {
+        auditId = await insertAudit(url);
+      } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: "Failed to create audit row." });
+      }
 
-    // Detached run: the response returns before the pipeline starts (§10).
-    startAudit(auditId);
+      // Detached run: the response returns before the pipeline starts (§10).
+      startAudit(auditId);
 
-    return { auditId, status: "running" };
-  });
+      return { auditId, status: "running" };
+    },
+  );
 
   app.get("/audit/:id", async (request, reply) => {
-    if (!isSupabaseConfigured()) {
+    if (!isPocketBaseConfigured()) {
       return reply.code(503).send({ error: NOT_CONFIGURED });
     }
 
     const params = AuditIdParamsSchema.safeParse(request.params);
     if (!params.success) {
-      return reply.code(400).send({ error: "Invalid audit id — expected a UUID." });
+      return reply.code(400).send({ error: "Invalid audit id." });
     }
 
     let row;

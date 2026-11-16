@@ -1,0 +1,113 @@
+import { z } from "zod";
+
+/**
+ * Runtime configuration, validated once at boot. Optional third-party keys are
+ * allowed to be absent — the pipeline degrades gracefully — but a production
+ * boot refuses to start without PocketBase, because every audit write would
+ * fail anyway.
+ */
+const optionalUrl = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().url().optional(),
+);
+
+const optionalString = z.preprocess(
+  (value) => (value === "" ? undefined : value),
+  z.string().min(1).optional(),
+);
+
+const EnvSchema = z.object({
+  NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
+  PORT: z.coerce.number().int().positive().default(4000),
+  HOST: z.string().min(1).default("0.0.0.0"),
+
+  POCKETBASE_URL: optionalUrl,
+  POCKETBASE_PUBLIC_URL: optionalUrl,
+  POCKETBASE_ADMIN_EMAIL: optionalString,
+  POCKETBASE_ADMIN_PASSWORD: optionalString,
+
+  WEB_BASE_URL: optionalUrl,
+  CORS_ORIGINS: optionalString,
+
+  GEMINI_API_KEY: optionalString,
+  SERPER_API_KEY: optionalString,
+  OPENPAGERANK_API_KEY: optionalString,
+
+  /** Set to `true` when the API runs behind a reverse proxy / PaaS load balancer. */
+  TRUST_PROXY: z
+    .preprocess((value) => value === "true" || value === "1", z.boolean())
+    .default(false),
+  MAX_CONCURRENT_AUDITS: z.coerce.number().int().min(1).max(50).default(2),
+  RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(5),
+  RATE_LIMIT_WINDOW: z.string().min(1).default("1 minute"),
+  BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(1_048_576),
+});
+
+export type Env = z.infer<typeof EnvSchema>;
+
+function loadEnv(): Env {
+  const parsed = EnvSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const detail = parsed.error.issues
+      .map((issue) => `  - ${issue.path.join(".") || "(root)"}: ${issue.message}`)
+      .join("\n");
+    throw new Error(`Invalid environment variables:\n${detail}`);
+  }
+  return Object.freeze(parsed.data);
+}
+
+export const env = loadEnv();
+
+export const isProduction = env.NODE_ENV === "production";
+
+/** PocketBase is the only hard dependency: without it no audit can be stored. */
+export const hasPocketBaseConfig =
+  env.POCKETBASE_URL !== undefined &&
+  env.POCKETBASE_ADMIN_EMAIL !== undefined &&
+  env.POCKETBASE_ADMIN_PASSWORD !== undefined;
+
+export function missingPocketBaseKeys(): string[] {
+  const missing: string[] = [];
+  if (env.POCKETBASE_URL === undefined) missing.push("POCKETBASE_URL");
+  if (env.POCKETBASE_ADMIN_EMAIL === undefined) missing.push("POCKETBASE_ADMIN_EMAIL");
+  if (env.POCKETBASE_ADMIN_PASSWORD === undefined) missing.push("POCKETBASE_ADMIN_PASSWORD");
+  return missing;
+}
+
+/** Browser-facing base URL for screenshot/PDF links. */
+export function pocketBasePublicUrl(): string {
+  return env.POCKETBASE_PUBLIC_URL ?? env.POCKETBASE_URL ?? "http://127.0.0.1:8090";
+}
+
+/** CORS allowlist: explicit `CORS_ORIGINS`, else the web app's origin. */
+export function allowedOrigins(): string[] {
+  if (env.CORS_ORIGINS !== undefined) {
+    return env.CORS_ORIGINS.split(",")
+      .map((origin) => origin.trim())
+      .filter((origin) => origin.length > 0);
+  }
+  if (env.WEB_BASE_URL !== undefined) {
+    return [env.WEB_BASE_URL.replace(/\/$/, "")];
+  }
+  return ["http://localhost:3000", "http://127.0.0.1:3000"];
+}
+
+/**
+ * Fail fast on misconfiguration. In production a missing PocketBase config (or
+ * a wildcard-less CORS setup in dev) is fatal; optional API keys only warn.
+ */
+export function assertBootConfig(log: (message: string) => void): void {
+  if (!hasPocketBaseConfig) {
+    const message = `PocketBase is not configured. Missing env: ${missingPocketBaseKeys().join(
+      ", ",
+    )}. Copy .env.example to .env and fill the PocketBase keys.`;
+    if (isProduction) throw new Error(message);
+    log(`[config] ${message}`);
+  }
+
+  for (const key of ["GEMINI_API_KEY", "SERPER_API_KEY", "OPENPAGERANK_API_KEY"] as const) {
+    if (env[key] === undefined) {
+      log(`[config] ${key} is not set — related analyses will degrade gracefully.`);
+    }
+  }
+}

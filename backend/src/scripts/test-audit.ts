@@ -2,10 +2,10 @@ import "dotenv/config";
 
 import { runAudit } from "../pipeline.js";
 import { fetchAudit, insertAudit } from "../lib/store.js";
-import { getMissingSupabaseKeys } from "../lib/supabase.js";
+import { getMissingPocketBaseKeys } from "../lib/pb.js";
 
 /**
- * Demo rehearsal (spec §13, phase 12): run one or more audits end to end and
+ * Demo rehearsal (spec Â§13, phase 12): run one or more audits end to end and
  * report the wall-clock time of each, so a demo can be timed and the failure
  * modes surfaced before an audience sees them.
  *
@@ -48,17 +48,17 @@ async function rehearse(url: string): Promise<RunResult> {
     overall:
       typeof report?.overall_score === "number"
         ? String(report.overall_score)
-        : "—",
-    grade: typeof report?.grade === "string" ? report.grade : "—",
-    pdfUrl: row?.pdf_url ?? "—",
-    error: row?.error_message ?? "—",
+        : "n/a",
+    grade: typeof report?.grade === "string" ? report.grade : "n/a",
+    pdfUrl: row?.pdf_url ?? "n/a",
+    error: row?.error_message ?? "n/a",
   };
 
   console.log(`[audit] status     ${result.status}`);
   console.log(`[audit] duration   ${result.seconds}s`);
   console.log(`[audit] score      ${result.overall} (${result.grade})`);
   console.log(`[audit] pdf        ${result.pdfUrl}`);
-  if (result.error !== "—") {
+  if (result.error !== "n/a") {
     console.log(`[audit] error      ${result.error}`);
   }
 
@@ -79,7 +79,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const missing = getMissingSupabaseKeys();
+  const missing = getMissingPocketBaseKeys();
   if (missing.length > 0) {
     console.error(`[audit] missing env: ${missing.join(", ")}`);
     console.error("[audit] copy .env.example to .env and fill in the keys");

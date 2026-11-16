@@ -6,6 +6,8 @@ import type {
   Niche,
 } from "@rostify/shared";
 
+import pLimit from "p-limit";
+
 import { analyzeAiReadiness } from "./analysts/ai-readiness.js";
 import { huntCompetitors } from "./analysts/competitor.js";
 import { analyzeContent } from "./analysts/content.js";
@@ -24,6 +26,10 @@ import {
   type SerpSnapshot,
 } from "./lib/serper.js";
 import { updateAudit, fetchAudit, type AuditPatch } from "./lib/store.js";
+import { env } from "./lib/env.js";
+
+/** Caps concurrent audits so a burst of POSTs cannot spawn endless browsers. */
+const auditLimiter = pLimit(env.MAX_CONCURRENT_AUDITS);
 
 /** Hard limit per spec §5.3 — anything longer fails with 'Audit timed out'. */
 const AUDIT_TIMEOUT_MS = 180_000;
@@ -309,7 +315,9 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
  */
 export function startAudit(auditId: string): void {
   setImmediate(() => {
-    void runAudit(auditId);
+    // `runAudit` never rejects (it records failures on the audit row), so the
+    // limiter queue cannot accumulate unhandled rejections.
+    void auditLimiter(() => runAudit(auditId));
   });
 }
 

@@ -6,11 +6,11 @@ import { chromium, type Request, type Response } from "playwright";
 import type { CrawlData } from "@rostify/shared";
 import { CrawlDataSchema } from "../lib/schemas.js";
 import {
-  getMissingSupabaseKeys,
-  isSupabaseConfigured,
-  MissingSupabaseConfigError,
+  getMissingPocketBaseKeys,
+  isPocketBaseConfigured,
+  MissingPocketBaseConfigError,
   uploadScreenshot,
-} from "../lib/supabase.js";
+} from "../lib/pb.js";
 
 export class CrawlError extends Error {
   constructor(
@@ -31,7 +31,7 @@ export type CrawlOptions = {
   auditId?: string;
   /** Short site label used in screenshot filenames (defaults to the hostname). */
   label?: string;
-  /** `upload` (default) sends PNGs to Supabase Storage, `local` writes to `.cache/`. */
+  /** `upload` (default) attaches PNGs to the PocketBase audit record, `local` writes to `.cache/`. */
   screenshotMode?: ScreenshotMode;
 };
 
@@ -282,8 +282,8 @@ export async function crawlUrl(
   const label = sanitizeLabel(options.label ?? new URL(url).hostname);
   const screenshotMode = options.screenshotMode ?? "upload";
 
-  if (screenshotMode === "upload" && !isSupabaseConfigured()) {
-    throw new MissingSupabaseConfigError(getMissingSupabaseKeys());
+  if (screenshotMode === "upload" && !isPocketBaseConfigured()) {
+    throw new MissingPocketBaseConfigError(getMissingPocketBaseKeys());
   }
 
   const startedAt = Date.now();

@@ -57,7 +57,7 @@ function mimeTypeOf(buffer: Buffer): string {
   return "image/png";
 }
 
-/** Read a screenshot from Supabase Storage or from the local `.cache` folder. */
+/** Read a screenshot from its remote URL or from the local `.cache` folder. */
 async function loadImage(source: string): Promise<Buffer> {
   if (/^https?:\/\//i.test(source)) {
     const response = await fetch(source, {

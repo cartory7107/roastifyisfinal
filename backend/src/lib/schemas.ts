@@ -148,6 +148,7 @@ export const CreateAuditRequestSchema = z.object({
   url: z.string().url(),
 });
 
+/** PocketBase ids are 15-char alphanumeric strings, not UUIDs. */
 export const AuditIdParamsSchema = z.object({
-  id: z.string().uuid(),
+  id: z.string().regex(/^[A-Za-z0-9]{1,64}$/, "invalid id"),
 });

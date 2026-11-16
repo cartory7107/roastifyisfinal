@@ -11,6 +11,8 @@ build/
 .DS_Store
 Thumbs.db
 coverage/
+pb/
+pb_data/
 playwright-report/
 test-results/
 *.tsbuildinfo

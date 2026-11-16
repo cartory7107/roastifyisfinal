@@ -156,8 +156,11 @@ export const CrawlBundleSchema = z.object({
   competitors: z.array(CrawlDataSchema),
 });
 
+/** PocketBase record ids are short alphanumeric strings, not UUIDs. */
+export const AuditIdSchema = z.string().regex(/^[A-Za-z0-9]{1,64}$/);
+
 export const AuditRowSchema = z.object({
-  id: z.string().uuid(),
+  id: AuditIdSchema,
   status: AuditStatusSchema,
   current_step: AuditStepSchema.nullable(),
   target_url: z.string(),
@@ -170,6 +173,7 @@ export const AuditRowSchema = z.object({
   performance_analysis: CategoryAnalysisSchema.nullable(),
   offpage_analysis: CategoryAnalysisSchema.nullable(),
   ai_readiness_analysis: CategoryAnalysisSchema.nullable(),
+  uiux_analysis: CategoryAnalysisSchema.nullable(),
   final_report: FinalReportSchema.nullable(),
   pdf_url: z.string().nullable(),
   error_message: z.string().nullable(),
@@ -184,16 +188,30 @@ export const CreateAuditRequestSchema = z.object({
 });
 
 export const CreateAuditResponseSchema = z.object({
-  auditId: z.string().uuid(),
+  auditId: AuditIdSchema,
   status: AuditStatusSchema,
 });
 
+export const PageSnapshotSchema = z.object({
+  url: z.string(),
+  title: z.string(),
+  metaDescription: z.string(),
+  h1: z.array(z.string()),
+  h2: z.array(z.string()),
+  wordCount: z.number().int().min(0),
+  statusCode: z.number().int().min(0),
+});
+
 export const AuditPollResponseSchema = z.object({
-  id: z.string().uuid(),
+  id: AuditIdSchema,
   status: AuditStatusSchema,
   currentStep: AuditStepSchema.nullable(),
+  targetUrl: z.string(),
   result: FinalReportSchema.nullable(),
   error: z.string().nullable(),
+  uiux: CategoryAnalysisSchema.nullable(),
+  pdfUrl: z.string().nullable(),
+  page: PageSnapshotSchema.nullable(),
 });
 
 export const HealthResponseSchema = z.object({

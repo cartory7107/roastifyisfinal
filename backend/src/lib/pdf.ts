@@ -1,6 +1,6 @@
 import { chromium } from "playwright";
 
-import { uploadReportPdf } from "./supabase.js";
+import { uploadReportPdf } from "./pb.js";
 
 /** Spec §15: 30s page timeout, one retry. */
 const PAGE_TIMEOUT_MS = 30_000;
@@ -87,7 +87,7 @@ async function renderOnce(auditId: string): Promise<Buffer> {
 }
 
 /**
- * Render `/audit/{id}/print` to PDF, upload it to Supabase Storage and return
+ * Render `/audit/{id}/print` to PDF, attach it to the PocketBase audit record and return
  * its public URL (spec §13, phase 11). Retries once on a transient failure.
  */
 export async function renderReportPdf(auditId: string): Promise<string> {
