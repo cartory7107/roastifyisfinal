@@ -18,7 +18,10 @@ export default async function PrintAuditPage({
 }) {
   const data = await getAudit(params.id).catch(() => null);
 
-  if (data === null || data.status !== "completed" || data.result === null) {
+  // The PDF is rendered while the audit row is still `running` (the report is
+  // persisted one step earlier), so the print view must key off the report
+  // payload rather than the status flag (spec §13, phase 11).
+  if (data === null || data.result === null) {
     notFound();
   }
 
