@@ -107,6 +107,16 @@ pnpm dev        # API on :4000, web on :3000
 | `BODY_LIMIT_BYTES`         | no       | `1048576`               | Maximum request body                                         |
 | `NEXT_PUBLIC_API_BASE_URL` | no       | `http://localhost:4000` | Frontend → API base URL                                      |
 
+### Where to get the optional keys
+
+| Key | Where | Without it |
+| --- | ----- | ---------- |
+| `GEMINI_API_KEY` | https://aistudio.google.com/apikey → *Create API key* | AI readiness, niche and the written summary are skipped |
+| `SERPER_API_KEY` | https://serper.dev → sign up → dashboard | Competitor discovery and SERP intent are skipped |
+| `OPENPAGERANK_API_KEY` | https://openpagerank.com → free signup → dashboard | Off-page score is skipped |
+
+Paste each key into `backend/.env` and restart the API. Missing keys only warn at boot.
+
 ## Scripts
 
 | Command                            | What it does                                          |
