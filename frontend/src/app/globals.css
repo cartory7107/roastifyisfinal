@@ -31,6 +31,23 @@
   body {
     @apply bg-background text-foreground antialiased;
     font-feature-settings: "rlig" 1, "calt" 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Headings in this document are prose, not single words — balance the lines. */
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  :focus-visible {
+    @apply outline-none ring-2 ring-ring ring-offset-2 ring-offset-background;
+  }
+
+  ::selection {
+    background-color: #f97316;
+    color: #131313;
   }
 }
 
@@ -39,6 +56,23 @@
 /* Category rows link to in-page anchors; keep the heading clear of the top. */
 .report-section {
   scroll-margin-top: 1.5rem;
+}
+
+html {
+  scroll-behavior: smooth;
+  /* Clear the sticky marketing header when an anchor is followed. */
+  scroll-padding-top: 5.5rem;
+}
+
+/* The landing page is a dark surface end to end, including overscroll. */
+body:has(.landing-page) {
+  background-color: #131313;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 /* Keep one section on one printed page where possible. */
