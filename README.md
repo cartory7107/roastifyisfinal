@@ -13,7 +13,7 @@ plus a PDF.
 | Backend    | Fastify 4 + TypeScript (ESM), Zod-validated config                  |
 | Database   | PocketBase 0.40 (SQLite + file storage, single binary)              |
 | Crawling   | Playwright (Chromium) + Lighthouse                                  |
-| Analysis   | Gemini via `@google/genai`; Serper for SERP; Open PageRank for DA    |
+| Analysis   | Groq (`qwen/qwen3.8-27b`) via the OpenAI-compatible API; Serper for SERP; Open PageRank for DA |
 | Monorepo   | pnpm workspaces (`frontend`, `backend`, `packages/shared`)          |
 
 ## Repository layout
@@ -64,8 +64,8 @@ cp .env.example backend/.env
 ```
 
 Set `POCKETBASE_ADMIN_PASSWORD` to the password you chose above. The optional
-`GEMINI_API_KEY`, `SERPER_API_KEY` and `OPENPAGERANK_API_KEY` unlock the corresponding
-analyses — without them those stages degrade instead of failing.
+`GROQ_API_KEY`, `SERPER_API_KEY`, `OPENPAGERANK_API_KEY` and `SEODATA_API_KEY` unlock the
+corresponding analyses — without them those stages degrade instead of failing.
 
 ### 3. Create the `audits` collection
 
@@ -96,9 +96,13 @@ pnpm dev        # API on :4000, web on :3000
 | `POCKETBASE_ADMIN_PASSWORD`| yes      | –                       | Superuser password                                           |
 | `WEB_BASE_URL`             | no       | –                       | Used for PDF rendering and as the default CORS origin        |
 | `CORS_ORIGINS`             | no       | `WEB_BASE_URL`          | Comma-separated allowlist, overrides `WEB_BASE_URL`          |
-| `GEMINI_API_KEY`           | no       | –                       | Enables LLM analyses                                         |
+| `GROQ_API_KEY`             | no       | –                       | Enables LLM analyses                                         |
+| `GROQ_MODEL`               | no       | `qwen/qwen3.8-27b`      | Groq model (must be multimodal for the screenshot review)    |
+| `LLM_TOKENS_PER_MINUTE`    | no       | `8000`                  | Token budget per minute; free tier is 8K                     |
 | `SERPER_API_KEY`           | no       | –                       | Enables competitor/SERP analysis                             |
 | `OPENPAGERANK_API_KEY`     | no       | –                       | Enables Domain Authority lookups                             |
+| `SEODATA_API_KEY`          | no       | –                       | Keyword volume/CPC/competition; anonymous works (20/day)     |
+| `SEO_KEYWORD_COUNTRY`      | no       | `us`                    | Two-letter market for keyword volumes (no `bd` data)         |
 | `TRUST_PROXY`              | no       | `false`                 | `true` behind a reverse proxy / PaaS load balancer           |
 | `ALLOW_PRIVATE_HOSTS`      | no       | `false`                 | Allow auditing localhost / private IPs (local dev only)       |
 | `MAX_CONCURRENT_AUDITS`    | no       | `2`                     | Global audit concurrency cap (1–50)                          |
@@ -111,9 +115,10 @@ pnpm dev        # API on :4000, web on :3000
 
 | Key | Where | Without it |
 | --- | ----- | ---------- |
-| `GEMINI_API_KEY` | https://aistudio.google.com/apikey → *Create API key* | AI readiness, niche and the written summary are skipped |
+| `GROQ_API_KEY` | https://console.groq.com/keys → *Create API key* (free) | AI readiness, niche and the written summary are skipped |
 | `SERPER_API_KEY` | https://serper.dev → sign up → dashboard | Competitor discovery and SERP intent are skipped |
 | `OPENPAGERANK_API_KEY` | https://openpagerank.com → free signup → dashboard | Off-page score is skipped |
+| `SEODATA_API_KEY` | https://www.seodata.dev/get-key → email verification (free) | Keyword research runs on the anonymous 20 lookups/day quota |
 
 Paste each key into `backend/.env` and restart the API. Missing keys only warn at boot.
 
@@ -136,6 +141,7 @@ Paste each key into `backend/.env` and restart the API. Missing keys only warn a
 | ----------------- | --------------------------------------------------------------------------- |
 | `POST /audit`     | `{ "url": "https://example.com" }` → `{ auditId, status }` (rate limited)   |
 | `GET /audit/:id`  | Poll status, current step, page snapshot, analyses, final report, PDF URL   |
+| `POST /audit/:id/pdf` | Render and return the report PDF (reuses an existing file; 409 until the report exists) |
 | `GET /health`     | Liveness                                                                    |
 | `GET /health/ready` | Readiness: 503 unless PocketBase answers                                  |
 
@@ -184,6 +190,9 @@ the client would otherwise poll a status that can never change.
 CI (`.github/workflows/ci.yml`) runs install → typecheck → lint → test → build on Node 22.
 
 ## Deploying
+
+Docker Compose is the supported path — `DEPLOY.md` has the full walkthrough
+(`cp .env.example .env`, `docker compose up -d --build`). In short:
 
 - Run **one** API instance: concurrency limits and the write queue are in-process.
 - Persist `pb_data/` (the whole PocketBase state: SQLite + uploaded files). That directory

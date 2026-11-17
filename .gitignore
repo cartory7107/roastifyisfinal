@@ -16,3 +16,6 @@ pb_data/
 playwright-report/
 test-results/
 *.tsbuildinfo
+
+# Design reference (Stitch exports, screenshots) — not needed to build or run.
+frontend/stitch_rostify_ai_seo_audit_platform/
