@@ -22,7 +22,7 @@ const GROUPS: { label: string; detail: string; steps: AuditStep[] }[] = [
   {
     label: "Finding competitors",
     detail: "Detecting the niche and the two closest search rivals.",
-    steps: ["niche"],
+    steps: ["niche", "keywords"],
   },
   {
     label: "Deep crawling",

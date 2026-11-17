@@ -96,12 +96,18 @@ export default function AuditPage() {
     }
   }
 
-  if (data !== null && data.status === "completed" && data.result !== null) {
+  // A report can exist on a `failed` row: the pipeline persists it before the
+  // final PDF stage, so a late failure must not hide a complete audit.
+  const report = data?.result ?? null;
+  const hasReport =
+    report !== null && (data?.status === "completed" || data?.status === "failed");
+
+  if (data !== null && hasReport) {
     return (
       <main className="min-h-screen bg-secondary/30">
         <ReportView
           auditId={data.id}
-          report={data.result}
+          report={report}
           uiux={data.uiux}
           page={data.page}
           pdfUrl={data.pdfUrl}

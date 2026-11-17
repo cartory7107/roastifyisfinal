@@ -34,6 +34,11 @@ export async function runAudit(url: string) {
   });
 }
 
+/** Render (or reuse) the report PDF for a completed audit. */
+export async function createAuditPdf(id: string) {
+  return request<{ pdfUrl: string }>(`/audit/${id}/pdf`, { method: "POST" });
+}
+
 export function getAudit(id: string) {
   return request<AuditPollResponse>(`/audit/${id}`);
 }

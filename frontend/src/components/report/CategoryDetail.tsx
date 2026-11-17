@@ -3,7 +3,7 @@ import type {
   CategoryKey,
   PageSnapshot,
 } from "@rostify/shared";
-import { Check, CircleSlash, Minus, X } from "lucide-react";
+import { Check, CheckCircle2, CircleSlash, Minus, X } from "lucide-react";
 
 import {
   asArray,
@@ -211,29 +211,67 @@ const ONPAGE_PARTS = [
 function SerpPreview({ page }: { page: PageSnapshot | null }) {
   if (page === null) return null;
 
-  const breadcrumb = (() => {
+  const site = (() => {
     try {
       const url = new URL(page.url);
-      return `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+      return { host: url.host.replace(/^www\./, ""), path: url.pathname };
     } catch {
-      return page.url;
+      return { host: page.url, path: "" };
     }
   })();
 
+  const title = page.title.trim();
+  const description = page.metaDescription.trim();
+
   return (
     <div className="rounded-xl border border-border bg-card p-4">
-      <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+      <p className="mb-2.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
         How this page appears in a Google result
       </p>
-      <p className="truncate text-xs text-[#3c4043]">{breadcrumb}</p>
-      <p className="mt-0.5 line-clamp-2 text-lg leading-snug text-[#1a0dab]">
-        {page.title.trim() === "" ? "(no title tag)" : page.title}
-      </p>
-      <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-[#4d5156]">
-        {page.metaDescription.trim() === ""
-          ? "(no meta description — Google will write its own snippet)"
-          : page.metaDescription}
-      </p>
+
+      <div className="rounded-lg border border-border/70 bg-background p-4">
+        <div className="flex items-center gap-2.5">
+          <span
+            aria-hidden
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-secondary text-[11px] font-bold uppercase text-muted-foreground"
+          >
+            {site.host.charAt(0) === "" ? "?" : site.host.charAt(0)}
+          </span>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium leading-tight text-foreground/80">
+              {site.host}
+            </p>
+            <p className="truncate text-[11px] leading-tight text-muted-foreground">
+              {site.host}
+              <span className="text-muted-foreground/70">{site.path}</span>
+            </p>
+          </div>
+        </div>
+
+        <p className="mt-2.5 line-clamp-2 text-lg leading-snug text-[#1a0dab]">
+          {title === "" ? "(no title tag)" : title}
+        </p>
+        <p className="mt-1 line-clamp-2 text-sm leading-relaxed text-[#4d5156]">
+          {description === ""
+            ? "(no meta description — Google will write its own snippet)"
+            : description}
+        </p>
+      </div>
+
+      <div className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+        <span
+          className={title.length > 60 ? "text-amber-600" : "text-muted-foreground"}
+        >
+          Title {title.length} chars · target 50–60
+        </span>
+        <span
+          className={
+            description.length > 160 ? "text-amber-600" : "text-muted-foreground"
+          }
+        >
+          Description {description.length} chars · target 150–160
+        </span>
+      </div>
     </div>
   );
 }
@@ -522,7 +560,8 @@ export function CategoryDetail({ categoryKey, analysis, page }: CategoryDetailPr
           </div>
         </div>
       ) : (
-        <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+        <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm font-medium text-emerald-800">
+          <CheckCircle2 aria-hidden className="h-4 w-4 shrink-0" />
           No issues were detected in this category. Keep it this way.
         </p>
       )}

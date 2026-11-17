@@ -23,11 +23,21 @@ export function PrioritiesList({ priorities, className }: PrioritiesListProps) {
       {priorities.map((priority, index) => (
         <li
           key={`${priority.title}-${index}`}
-          className="print-break flex flex-col rounded-xl border border-border bg-card p-5 shadow-sm"
+          className={cn(
+            "print-break flex flex-col rounded-xl border bg-card p-5 shadow-sm",
+            index === 0
+              ? "border-primary/40 ring-1 ring-primary/10"
+              : "border-border",
+          )}
         >
           <div className="flex items-center justify-between">
             <span
-              className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10 text-sm font-bold text-primary"
+              className={cn(
+                "flex h-8 w-8 items-center justify-center rounded-full text-sm font-bold",
+                index === 0
+                  ? "bg-primary text-primary-foreground"
+                  : "bg-primary/10 text-primary",
+              )}
               aria-label={`Priority ${index + 1}`}
             >
               {index + 1}
@@ -45,7 +55,7 @@ export function PrioritiesList({ priorities, className }: PrioritiesListProps) {
             {priority.why}
           </p>
           <span className="mt-4 inline-flex items-center gap-1 text-xs font-medium text-primary">
-            Fix this first
+            Fix #{index + 1}
             <ArrowUpRight aria-hidden className="h-3.5 w-3.5" />
           </span>
         </li>

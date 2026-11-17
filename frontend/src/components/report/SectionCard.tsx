@@ -44,12 +44,12 @@ export function SectionCard({
             {title}
           </h2>
           {description ? (
-            <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+            <p className="mt-2 max-w-2xl text-sm leading-relaxed text-muted-foreground">
               {description}
             </p>
           ) : null}
         </div>
-        {actions ? <div className="shrink-0 no-print">{actions}</div> : null}
+        {actions ? <div className="shrink-0">{actions}</div> : null}
       </header>
       {children}
     </section>

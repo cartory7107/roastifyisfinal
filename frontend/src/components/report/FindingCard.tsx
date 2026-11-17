@@ -1,7 +1,7 @@
 import type { Finding } from "@rostify/shared";
 import { ArrowRight, Wrench } from "lucide-react";
 
-import { SEVERITY_META } from "@/lib/report";
+import { categoryLabel, SEVERITY_META } from "@/lib/report";
 import { cn } from "@/lib/utils";
 
 import { EvidenceBlock } from "./EvidenceBlock";
@@ -23,7 +23,8 @@ export function FindingCard({
   return (
     <article
       className={cn(
-        "print-break rounded-xl border border-border bg-card p-5 shadow-sm",
+        "print-break rounded-xl border border-border border-l-4 bg-card p-5 shadow-sm",
+        severity.accent,
         className,
       )}
     >
@@ -39,7 +40,7 @@ export function FindingCard({
         </span>
         {showCategory ? (
           <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            {finding.category}
+            {categoryLabel(finding.category)}
           </span>
         ) : null}
       </div>
@@ -51,12 +52,12 @@ export function FindingCard({
         {finding.detail}
       </p>
 
-      <div className="mt-4 flex gap-2.5 rounded-lg bg-accent/60 p-3 text-sm leading-relaxed text-accent-foreground">
-        <Wrench aria-hidden className="mt-0.5 h-4 w-4 shrink-0" />
-        <div>
-          <span className="font-semibold">How to fix it: </span>
-          {finding.recommendation}
-        </div>
+      <div className="mt-4 rounded-lg border border-border bg-secondary/50 p-3.5">
+        <p className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+          <Wrench aria-hidden className="h-3.5 w-3.5" />
+          How to fix it
+        </p>
+        <p className="mt-1.5 text-sm leading-relaxed">{finding.recommendation}</p>
       </div>
 
       {finding.evidence ? <EvidenceBlock data={finding.evidence} /> : null}

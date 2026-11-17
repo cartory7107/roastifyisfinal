@@ -3,14 +3,7 @@ import type {
   FinalReport,
   PageSnapshot,
 } from "@rostify/shared";
-import {
-  ArrowLeft,
-  Download,
-  FileText,
-  Info,
-  Printer,
-  ScanEye,
-} from "lucide-react";
+import { ArrowLeft, CheckCircle2, FileText, Printer, ScanEye } from "lucide-react";
 import Link from "next/link";
 
 import {
@@ -25,13 +18,15 @@ import {
   formatDuration,
   hostOf,
   pathOf,
+  scoreBand,
   SEVERITY_META,
   sortFindings,
   totalFindings,
 } from "@/lib/report";
 import { cn } from "@/lib/utils";
 
-import { CategoryDetail } from "./CategoryDetail";
+import { CategoryDetail, Stat } from "./CategoryDetail";
+import { DownloadPdfButton } from "./DownloadPdfButton";
 import { CategoryScore } from "./CategoryScore";
 import { FindingCard } from "./FindingCard";
 import { PrioritiesList } from "./PrioritiesList";
@@ -98,15 +93,18 @@ function CompetitorTable({ report }: { report: FinalReport }) {
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-sm">
         <thead>
-          <tr className="border-b border-border text-left text-[11px] uppercase tracking-[0.1em] text-muted-foreground">
+          <tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
             <th className="py-2 pr-4 font-semibold">Ranking competitor</th>
             <th className="py-2 pr-4 font-semibold">Page title</th>
-            <th className="py-2 font-semibold">Domain authority</th>
+            <th className="py-2 text-right font-semibold">Domain authority</th>
           </tr>
         </thead>
         <tbody>
           {domains.map((entry) => (
-            <tr key={entry.url} className="border-b border-border/70 last:border-0">
+            <tr
+              key={entry.url}
+              className="border-b border-border/70 transition-colors last:border-0 hover:bg-secondary/40"
+            >
               <td className="py-3 pr-4 align-top">
                 <a
                   href={entry.url}
@@ -124,7 +122,7 @@ function CompetitorTable({ report }: { report: FinalReport }) {
                 {entry.title.trim() === "" ? "—" : entry.title}
               </td>
               <td className="py-3 align-top">
-                <div className="flex items-center gap-2">
+                <div className="flex items-center justify-end gap-2">
                   <span className="relative h-2 w-24 overflow-hidden rounded-full bg-secondary">
                     <span
                       className="absolute inset-y-0 left-0 rounded-full bg-slate-400"
@@ -133,7 +131,7 @@ function CompetitorTable({ report }: { report: FinalReport }) {
                       }}
                     />
                   </span>
-                  <span className="text-xs font-semibold tabular-nums">
+                  <span className="w-6 text-xs font-semibold tabular-nums">
                     {entry.da ?? "—"}
                   </span>
                 </div>
@@ -142,6 +140,110 @@ function CompetitorTable({ report }: { report: FinalReport }) {
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+/** "1,234" — keyword demand reads better with separators than raw integers. */
+function formatCount(value: number | null): string {
+  return value === null ? "—" : Math.round(value).toLocaleString("en-US");
+}
+
+function formatMoney(value: number | null): string {
+  return value === null ? "—" : `$${value.toFixed(2)}`;
+}
+
+function KeywordTable({ report }: { report: FinalReport }) {
+  const research = report.keywords;
+  const rows = research?.keywords ?? [];
+
+  if (rows.length === 0) {
+    const message =
+      research?.error === "rate_limited"
+        ? "The keyword research API's free allowance for today is used up, so no demand data was collected. Add a free SEOData.dev key to raise the limit to 50 lookups a day; the audit itself is complete either way."
+        : "No keyword demand data was returned for this run — the keyword research API was unavailable or the niche returned nothing measurable. The audit itself is complete either way.";
+
+    return (
+      <p className="rounded-lg border border-dashed border-border bg-secondary/30 px-4 py-6 text-sm leading-relaxed text-muted-foreground">
+        {message}
+      </p>
+    );
+  }
+
+  const maxVolume = Math.max(1, ...rows.map((row) => row.volume ?? 0));
+
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-sm">
+        <thead>
+          <tr className="border-b border-border text-left text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+            <th className="py-2 pr-4 font-semibold">Keyword</th>
+            <th className="py-2 pr-4 font-semibold">Monthly searches</th>
+            <th className="py-2 pr-4 text-right font-semibold">CPC</th>
+            <th className="py-2 text-right font-semibold">Competition</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr
+              key={row.keyword}
+              className="border-b border-border/70 transition-colors last:border-0 hover:bg-secondary/40"
+            >
+              <td className="py-3 pr-4 align-top">
+                <p className="font-medium">{row.keyword}</p>
+                {row.similar.length > 0 ? (
+                  <ul className="mt-1.5 flex max-w-sm flex-wrap gap-1.5">
+                    {row.similar.slice(0, 5).map((suggestion) => (
+                      <li
+                        key={suggestion.keyword}
+                        className="rounded-md border border-border bg-secondary/50 px-1.5 py-0.5 text-[11px] text-muted-foreground"
+                        title={
+                          suggestion.volume === null
+                            ? suggestion.keyword
+                            : `${suggestion.keyword} — ${formatCount(suggestion.volume)}/mo`
+                        }
+                      >
+                        {suggestion.keyword}
+                        {suggestion.volume === null ? null : (
+                          <span className="ml-1 tabular-nums text-foreground/70">
+                            {formatCount(suggestion.volume)}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </td>
+              <td className="py-3 pr-4 align-top">
+                <div className="flex items-center gap-2">
+                  <span className="relative h-2 w-24 overflow-hidden rounded-full bg-secondary">
+                    <span
+                      className="absolute inset-y-0 left-0 rounded-full bg-slate-400"
+                      style={{
+                        width: `${Math.min(100, ((row.volume ?? 0) / maxVolume) * 100)}%`,
+                      }}
+                    />
+                  </span>
+                  <span className="text-xs font-semibold tabular-nums">
+                    {formatCount(row.volume)}
+                  </span>
+                </div>
+              </td>
+              <td className="py-3 pr-4 text-right align-top tabular-nums text-muted-foreground">
+                {formatMoney(row.cpc)}
+              </td>
+              <td className="py-3 text-right align-top tabular-nums text-muted-foreground">
+                {row.competition === null ? "—" : row.competition.toFixed(2)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="mt-3 text-[11px] text-muted-foreground">
+        Monthly averages for {research?.country.toUpperCase() ?? "—"} from
+        Google Ads data via seodata.dev. Competition is Google Ads competition
+        (0–1), not keyword difficulty.
+      </p>
     </div>
   );
 }
@@ -170,31 +272,19 @@ function UiuxSection({ analysis }: { analysis: CategoryAnalysis }) {
     >
       <div className="space-y-5">
         <div className="grid gap-2 sm:grid-cols-3">
-          <div className="rounded-lg border border-border bg-card px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Visual score (AI)
-            </p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums">
-              {llmScore === null ? "—" : `${Math.round(llmScore)}/100`}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Screenshots compared
-            </p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums">
-              {imagesSent ?? "—"}
-              {compared === null ? "" : ` (you + ${compared} rivals)`}
-            </p>
-          </div>
-          <div className="rounded-lg border border-border bg-card px-3 py-2.5">
-            <p className="text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-              Findings
-            </p>
-            <p className="mt-0.5 text-sm font-semibold tabular-nums">
-              {findings.length}
-            </p>
-          </div>
+          <Stat
+            label="Visual score (AI)"
+            value={llmScore === null ? "—" : `${Math.round(llmScore)}/100`}
+          />
+          <Stat
+            label="Screenshots compared"
+            value={
+              compared === null
+                ? `${imagesSent ?? "—"}`
+                : `${imagesSent ?? "—"} (you + ${compared} rivals)`
+            }
+          />
+          <Stat label="Findings" value={`${findings.length}`} />
         </div>
 
         {findings.length > 0 ? (
@@ -204,7 +294,8 @@ function UiuxSection({ analysis }: { analysis: CategoryAnalysis }) {
             ))}
           </div>
         ) : (
-          <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+          <p className="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3.5 py-2.5 text-sm font-medium text-emerald-800">
+            <CheckCircle2 aria-hidden className="h-4 w-4 shrink-0" />
             No visual issues were flagged. The layout reads cleanly against the
             competitors.
           </p>
@@ -229,6 +320,7 @@ export function ReportView({
   const priorities = derivePriorities(report);
   const total = totalFindings(report, uiux);
   const message = verdict(report);
+  const overallBand = scoreBand(report.overall_score);
 
   const allFindings = [
     ...CATEGORY_ORDER.flatMap((key) => report.category_scores[key].findings),
@@ -273,17 +365,7 @@ export function ReportView({
             <Printer aria-hidden className="h-4 w-4" />
             Print view
           </Link>
-          {pdfUrl === null ? null : (
-            <a
-              href={pdfUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex h-9 items-center gap-1.5 rounded-md bg-primary px-3 text-sm font-medium text-primary-foreground shadow transition-colors hover:bg-primary/90"
-            >
-              <Download aria-hidden className="h-4 w-4" />
-              Download PDF
-            </a>
-          )}
+          <DownloadPdfButton auditId={auditId} pdfUrl={pdfUrl} />
         </div>
       </header>
 
@@ -292,7 +374,20 @@ export function ReportView({
         <div className="flex flex-col gap-8 sm:flex-row sm:items-center">
           <div className="flex flex-col items-center gap-3">
             <ScoreGauge score={report.overall_score} grade={report.grade} />
-            <GradeBadge grade={report.grade} />
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <GradeBadge grade={report.grade} />
+              <span
+                className={cn(
+                  "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold",
+                  overallBand.bg,
+                  overallBand.border,
+                  overallBand.text,
+                )}
+              >
+                <span className={cn("h-1.5 w-1.5 rounded-full", overallBand.bar)} />
+                {overallBand.label}
+              </span>
+            </div>
           </div>
 
           <div className="min-w-0 flex-1">
@@ -355,27 +450,23 @@ export function ReportView({
                 score={analysis.score}
                 href={`#${CATEGORY_META[key].anchor}`}
                 findingCount={analysis.findings.length}
+                weight={CATEGORY_WEIGHT[key]}
               />
             );
           })}
         </div>
-        <p className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-4 text-[11px] text-muted-foreground">
+        <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-1.5 border-t border-border pt-4 text-[11px] text-muted-foreground">
           <span className="inline-flex items-center gap-1.5">
             <span className="h-2 w-2 rounded-full bg-emerald-500" /> 80–100 good
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-amber-500" /> 60–79 needs
-            work
+            <span className="h-2 w-2 rounded-full bg-amber-500" /> 60–79 needs work
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <span className="h-2 w-2 rounded-full bg-red-500" /> below 60
-            critical
+            <span className="h-2 w-2 rounded-full bg-red-500" /> below 60 critical
           </span>
-          <span className="ml-auto inline-flex items-center gap-1.5">
-            <Info aria-hidden className="h-3.5 w-3.5" />
-            {CATEGORY_ORDER.map((key) => `${Math.round(CATEGORY_WEIGHT[key] * 100)}% ${CATEGORY_META[key].label.toLowerCase()}`).join(" · ")}
-          </span>
-        </p>
+          <span className="ml-auto">Percentages are each category&apos;s weight.</span>
+        </div>
       </SectionCard>
 
       {/* ---------- Priorities ---------- */}
@@ -415,6 +506,16 @@ export function ReportView({
 
       {/* ---------- UI/UX (unweighted) ---------- */}
       {uiux === null ? null : <UiuxSection analysis={uiux} />}
+
+      {/* ---------- Keyword demand ---------- */}
+      <SectionCard
+        id="keywords"
+        eyebrow="Benchmark"
+        title="Keyword demand"
+        description="How many people search for the terms this page is competing on, and what a click is worth."
+      >
+        <KeywordTable report={report} />
+      </SectionCard>
 
       {/* ---------- Competitors ---------- */}
       <SectionCard

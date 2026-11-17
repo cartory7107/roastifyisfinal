@@ -104,31 +104,35 @@ export function scoreBand(score: number): ScoreBand {
 
 export const SEVERITY_META: Record<
   Severity,
-  { label: string; rank: number; badge: string; dot: string }
+  { label: string; rank: number; badge: string; dot: string; accent: string }
 > = {
   critical: {
     label: "Critical",
     rank: 0,
     badge: "bg-red-50 text-red-700 border-red-200",
     dot: "bg-red-500",
+    accent: "border-l-red-500",
   },
   high: {
     label: "High",
     rank: 1,
     badge: "bg-orange-50 text-orange-700 border-orange-200",
     dot: "bg-orange-500",
+    accent: "border-l-orange-500",
   },
   medium: {
     label: "Medium",
     rank: 2,
     badge: "bg-amber-50 text-amber-700 border-amber-200",
     dot: "bg-amber-500",
+    accent: "border-l-amber-500",
   },
   low: {
     label: "Low",
     rank: 3,
     badge: "bg-slate-50 text-slate-600 border-slate-200",
     dot: "bg-slate-400",
+    accent: "border-l-slate-300",
   },
 };
 
