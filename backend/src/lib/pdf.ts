@@ -33,23 +33,29 @@ export function printUrl(auditId: string): string {
  */
 async function settleReport(page: import("playwright").Page): Promise<void> {
   await page.waitForSelector("#methodology", { timeout: PAGE_TIMEOUT_MS });
-  await page.evaluate(async () => {
-    await document.fonts.ready;
-    window.scrollTo(0, document.body.scrollHeight);
-    await new Promise((resolve) => setTimeout(resolve, 150));
-    window.scrollTo(0, 0);
-    await Promise.all(
-      Array.from(document.images)
-        .filter((image) => !image.complete)
-        .map(
-          (image) =>
-            new Promise<void>((resolve) => {
-              image.addEventListener("load", () => resolve(), { once: true });
-              image.addEventListener("error", () => resolve(), { once: true });
-            }),
-        ),
-    );
-  });
+
+  // Every step below is best-effort and bounded: a font or a screenshot that
+  // never settles must not hold the render (or crash it) — a slightly early
+  // PDF beats no PDF at all.
+  await page
+    .waitForFunction(() => document.fonts.status === "loaded", undefined, {
+      timeout: 5_000,
+    })
+    .catch(() => undefined);
+
+  // Walk the page so below-the-fold screenshots start loading, then come back.
+  await page
+    .evaluate(() => window.scrollTo(0, document.body.scrollHeight))
+    .catch(() => undefined);
+  await page.waitForTimeout(400);
+  await page
+    .waitForFunction(
+      () => Array.from(document.images).every((image) => image.complete),
+      undefined,
+      { timeout: 5_000 },
+    )
+    .catch(() => undefined);
+  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => undefined);
 }
 
 async function renderOnce(auditId: string): Promise<Buffer> {
@@ -64,8 +70,11 @@ async function renderOnce(auditId: string): Promise<Buffer> {
     });
     page.setDefaultTimeout(PAGE_TIMEOUT_MS);
 
+    // `networkidle` is unreliable against a dev server (the HMR socket never
+    // closes) and on pages that poll. The selector wait below is the real
+    // readiness signal, so only block on the document here.
     const response = await page.goto(printUrl(auditId), {
-      waitUntil: "networkidle",
+      waitUntil: "domcontentloaded",
       timeout: PAGE_TIMEOUT_MS,
     });
 

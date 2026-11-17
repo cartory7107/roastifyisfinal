@@ -3,13 +3,20 @@ import type { FastifyPluginAsync } from "fastify";
 
 import { startAudit } from "../pipeline.js";
 import { env } from "../lib/env.js";
+import { renderReportPdf } from "../lib/pdf.js";
 import { AuditIdParamsSchema, CreateAuditRequestSchema } from "../lib/schemas.js";
 import { isPocketBaseConfigured } from "../lib/pb.js";
-import { fetchAudit, insertAudit } from "../lib/store.js";
+import { fetchAudit, insertAudit, updateAudit } from "../lib/store.js";
 import { assertPublicUrl, BlockedUrlError } from "../lib/url-guard.js";
 
 const NOT_CONFIGURED =
   "PocketBase is not configured — copy .env.example to .env and fill POCKETBASE_URL / POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD.";
+
+/**
+ * One in-flight render per audit: a double-click on "Download PDF" should
+ * queue behind the first render, not launch a second headless browser.
+ */
+const pdfRenders = new Map<string, Promise<string>>();
 
 // POST /audit + GET /audit/:id (spec §10)
 export const auditRoutes: FastifyPluginAsync = async (app) => {
@@ -107,4 +114,71 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
     };
     return response;
   });
+
+  // POST /audit/:id/pdf — build the PDF on demand (spec §13 fallback). The
+  // pipeline already renders one after synthesis; this covers runs where that
+  // render failed and audits from before the stage existed.
+  app.post(
+    "/audit/:id/pdf",
+    {
+      config: {
+        rateLimit: { max: 5, timeWindow: "1 minute" },
+      },
+    },
+    async (request, reply) => {
+      if (!isPocketBaseConfigured()) {
+        return reply.code(503).send({ error: NOT_CONFIGURED });
+      }
+
+      const params = AuditIdParamsSchema.safeParse(request.params);
+      if (!params.success) {
+        return reply.code(400).send({ error: "Invalid audit id." });
+      }
+
+      let row;
+      try {
+        row = await fetchAudit(params.data.id);
+      } catch (err) {
+        request.log.error(err);
+        return reply.code(500).send({ error: "Failed to read audit row." });
+      }
+
+      if (row === null) {
+        return reply.code(404).send({ error: "Audit not found." });
+      }
+
+      // Only completed reports can be rendered; the print page would 404.
+      if (row.final_report === null) {
+        return reply
+          .code(409)
+          .send({ error: "This audit has no report yet — wait for it to finish." });
+      }
+
+      const existing = row.pdf_url;
+      if (existing !== null) {
+        return { pdfUrl: existing };
+      }
+
+      let render = pdfRenders.get(row.id);
+      if (render === undefined) {
+        render = renderReportPdf(row.id).then(async (pdfUrl) => {
+          await updateAudit(row.id, { pdf_url: pdfUrl });
+          return pdfUrl;
+        });
+        pdfRenders.set(row.id, render);
+        void render
+          .catch(() => undefined)
+          .finally(() => pdfRenders.delete(row.id));
+      }
+
+      try {
+        return { pdfUrl: await render };
+      } catch (err) {
+        request.log.warn({ err }, "pdf render failed");
+        return reply
+          .code(502)
+          .send({ error: "Could not render this report as a PDF. Try again." });
+      }
+    },
+  );
 };

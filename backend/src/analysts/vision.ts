@@ -1,7 +1,7 @@
 import type { CategoryAnalysis, CrawlData, Finding } from "@rostify/shared";
 import { z } from "zod";
 
-import { generateJson, GeminiError } from "../lib/gemini.js";
+import { generateJson, LlmError } from "../lib/llm.js";
 import { prepareVisionImages, type VisionImage } from "../lib/image.js";
 import { clamp } from "../lib/scoring.js";
 import { buildVisionPrompt, type VisionShot } from "../prompts/vision.js";
@@ -94,7 +94,7 @@ function unavailable(
     issue: "Visual analysis unavailable",
     detail: `The screenshot comparison did not run, so a neutral score of ${NEUTRAL_SCORE} was applied. Cause: ${reason}`,
     recommendation:
-      "Re-run the audit; verify the Gemini API key and quota, and that screenshots uploaded successfully.",
+      "Re-run the audit; verify the GROQ_API_KEY and the Groq rate limit, and that screenshots uploaded successfully.",
     evidence: { reason },
   };
 
@@ -156,7 +156,7 @@ export async function analyzeVision(
       })),
     );
   } catch (err) {
-    llmError = err instanceof GeminiError ? err.message : String(err);
+    llmError = err instanceof LlmError ? err.message : String(err);
     console.warn(`[vision] LLM analysis failed: ${llmError}`);
   }
 

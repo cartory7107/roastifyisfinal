@@ -5,11 +5,12 @@ import type {
   CrawlData,
   FinalReport,
   Grade,
+  KeywordResearch,
   Niche,
 } from "@rostify/shared";
 import { z } from "zod";
 
-import { generateJson, GeminiError } from "../lib/gemini.js";
+import { generateJson, LlmError } from "../lib/llm.js";
 import { rankFindings, type RankedFinding } from "../lib/impact.js";
 import { grade as letterGrade, overallScore } from "../lib/scoring.js";
 import { buildSynthesizerPrompt } from "../prompts/synthesizer.js";
@@ -37,6 +38,8 @@ export type SynthesizerInput = {
   competitors: Competitor[];
   /** Competitors that actually loaded — the ones with screenshots. */
   competitorPages: CrawlData[];
+  /** seodata.dev demand data for the niche's keywords (spec §8.7). */
+  keywordResearch: KeywordResearch;
   analyses: Record<CategoryKey, CategoryAnalysis>;
   /** ISO timestamp the audit finished at. */
   auditedAt: string;
@@ -125,7 +128,7 @@ async function summarize(
       top_priorities: fillPriorities(result.top_priorities ?? [], rankedFindings),
     };
   } catch (err) {
-    const message = err instanceof GeminiError ? err.message : String(err);
+    const message = err instanceof LlmError ? err.message : String(err);
     console.warn(`[synthesizer] LLM summary failed: ${message}`);
     return fallback;
   }
@@ -172,6 +175,7 @@ export async function synthesizeReport(input: SynthesizerInput): Promise<FinalRe
     executive_summary,
     top_priorities,
     competitors: competitorRows(input.competitors, input.competitorPages),
+    keywords: input.keywordResearch,
     screenshots: {
       target: {
         desktop: input.target.screenshotDesktopUrl,

@@ -98,6 +98,7 @@ async function main(): Promise<void> {
     target,
     competitors,
     competitorPages,
+    keywordResearch: { country: "us", keywords: [], error: null },
     analyses,
     auditedAt: new Date().toISOString(),
     durationMs: 1234,

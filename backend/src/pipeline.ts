@@ -11,6 +11,7 @@ import pLimit from "p-limit";
 import { analyzeAiReadiness } from "./analysts/ai-readiness.js";
 import { huntCompetitors } from "./analysts/competitor.js";
 import { analyzeContent } from "./analysts/content.js";
+import { researchKeywords } from "./analysts/keyword.js";
 import { classifyNiche, NICHE_FALLBACK } from "./analysts/niche.js";
 import { analyzeOffPage } from "./analysts/off-page.js";
 import { analyzeOnPage, primaryKeywordOf } from "./analysts/on-page.js";
@@ -31,8 +32,16 @@ import { env } from "./lib/env.js";
 /** Caps concurrent audits so a burst of POSTs cannot spawn endless browsers. */
 const auditLimiter = pLimit(env.MAX_CONCURRENT_AUDITS);
 
-/** Hard limit per spec §5.3 — anything longer fails with 'Audit timed out'. */
-const AUDIT_TIMEOUT_MS = 180_000;
+/**
+ * Hard limit for the whole run. A real site (crawl + Lighthouse + two
+ * competitor crawls + vision + synthesis + PDF) regularly needs more than the
+ * three minutes the spec assumed, and killing it at the very end threw away a
+ * complete report — so the cap is five minutes.
+ */
+const AUDIT_TIMEOUT_MS = 300_000;
+
+/** The PDF is a nice-to-have: bound it separately so it can never kill a report. */
+const PDF_STAGE_TIMEOUT_MS = 120_000;
 
 function log(message: string): void {
   console.log(`[pipeline] ${message}`);
@@ -79,6 +88,7 @@ type AuditStepName =
   | "technical"
   | "ai_readiness"
   | "niche"
+  | "keywords"
   | "performance"
   | "onpage"
   | "competitor"
@@ -208,7 +218,15 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
     ),
   ]);
 
-  // C — on-page depends on the niche's primary keyword (spec §8.2).
+  // C — keyword research (seodata.dev) needs the niche's keywords; on-page
+  // depends on the niche's primary keyword (spec §8.2).
+  const keywordResearch = await stage(
+    auditId,
+    "keywords",
+    () => researchKeywords(niche),
+    (result) => ({ keyword_research: result }),
+  );
+
   const onpage = await stage(
     auditId,
     "onpage",
@@ -274,6 +292,7 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
         target,
         competitors,
         competitorPages,
+        keywordResearch,
         analyses: {
           technical,
           onpage,
@@ -296,7 +315,7 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
     "pdf",
     async () => {
       try {
-        return await renderReportPdf(auditId);
+        return await withTimeout(renderReportPdf(auditId), PDF_STAGE_TIMEOUT_MS);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.warn(`[pipeline] pdf unavailable for ${auditId}: ${message}`);

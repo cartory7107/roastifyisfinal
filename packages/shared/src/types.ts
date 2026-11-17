@@ -5,6 +5,7 @@ export type AuditStatus = "pending" | "running" | "completed" | "failed";
 export type AuditStep =
   | "crawl_target"
   | "niche"
+  | "keywords"
   | "technical"
   | "ai_readiness"
   | "performance"
@@ -100,6 +101,36 @@ export type Competitor = {
   da: number | null;
 };
 
+/** A related term seodata.dev returns alongside a keyword lookup. */
+export type KeywordSuggestion = {
+  keyword: string;
+  volume: number | null;
+  cpc: number | null;
+  /** How closely the term's results overlap the queried keyword (0-100). */
+  overlap: number | null;
+};
+
+/** One keyword enriched with seodata.dev demand data (spec §8.7 keyword research). */
+export type KeywordMetric = {
+  keyword: string;
+  /** Monthly searches in the researched country, null when it has no data. */
+  volume: number | null;
+  /** Google Ads cost per click, null when it has no data. */
+  cpc: number | null;
+  /** Google Ads competition, 0-1, null when it has no data. */
+  competition: number | null;
+  /** Related terms, ordered by overlap, as returned by the API. */
+  similar: KeywordSuggestion[];
+};
+
+export type KeywordResearch = {
+  /** Two-letter country the volumes were measured for. */
+  country: string;
+  keywords: KeywordMetric[];
+  /** Why the research is empty, null when every lookup succeeded. */
+  error: "rate_limited" | "unavailable" | null;
+};
+
 /* ---------- Report contract ---------- */
 
 export type CategoryKey =
@@ -117,6 +148,8 @@ export type FinalReport = {
   executive_summary: string;
   top_priorities: { title: string; category: string; why: string }[];
   competitors: { url: string; title: string; da: number | null }[];
+  /** Demand data for the niche's keywords, null when research was unavailable. */
+  keywords: KeywordResearch | null;
   screenshots: {
     target: { desktop: string; mobile: string };
     competitors: { url: string; mobile: string }[];
@@ -141,6 +174,7 @@ export type AuditRow = {
   current_step: AuditStep | null;
   target_url: string;
   niche: Niche | null;
+  keyword_research: KeywordResearch | null;
   competitors: Competitor[] | null;
   crawl_data: CrawlBundle | null;
   technical_analysis: CategoryAnalysis | null;

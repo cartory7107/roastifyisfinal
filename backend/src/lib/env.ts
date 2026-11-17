@@ -29,9 +29,17 @@ const EnvSchema = z.object({
   WEB_BASE_URL: optionalUrl,
   CORS_ORIGINS: optionalString,
 
-  GEMINI_API_KEY: optionalString,
+  GROQ_API_KEY: optionalString,
+  GROQ_MODEL: optionalString,
+  /** Free-tier Groq allows 8K tokens per minute; raise it on a paid plan. */
+  LLM_TOKENS_PER_MINUTE: z.coerce.number().int().min(1_000).default(8_000),
+
   SERPER_API_KEY: optionalString,
   OPENPAGERANK_API_KEY: optionalString,
+  /** Optional: seodata.dev also answers anonymous, with a lower daily quota. */
+  SEODATA_API_KEY: optionalString,
+  /** Two-letter market for keyword volumes; seodata.dev has no `bd` data. */
+  SEO_KEYWORD_COUNTRY: z.string().length(2).default("us"),
 
   /** Set to `true` when the API runs behind a reverse proxy / PaaS load balancer. */
   TRUST_PROXY: z
@@ -112,9 +120,15 @@ export function assertBootConfig(log: (message: string) => void): void {
     log(`[config] ${message}`);
   }
 
-  for (const key of ["GEMINI_API_KEY", "SERPER_API_KEY", "OPENPAGERANK_API_KEY"] as const) {
+  for (const key of ["GROQ_API_KEY", "SERPER_API_KEY", "OPENPAGERANK_API_KEY"] as const) {
     if (env[key] === undefined) {
       log(`[config] ${key} is not set — related analyses will degrade gracefully.`);
     }
+  }
+
+  if (env.SEODATA_API_KEY === undefined) {
+    log(
+      "[config] SEODATA_API_KEY is not set — keyword research uses the anonymous 20 lookups/day quota.",
+    );
   }
 }

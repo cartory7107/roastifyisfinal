@@ -1,8 +1,9 @@
 # PROJECT_SPEC.md
 # Autonomous Multi-Agent AI Website Audit — Hackathon MVP (v2: Full 6-Category)
 
-> **Status:** this is the original build spec. Storage has since moved from Supabase to
-> PocketBase (see `README.md`); everything else still describes the shipped behaviour.
+> **Status:** this is the original build spec. Two things have since changed:
+> storage moved from Supabase to PocketBase, and the LLM moved from Gemini to Groq
+> (`qwen/qwen3.8-27b`). See `README.md` for the current setup.
 
 > **Single source of truth for the coding agent.**
 > এই ফাইলে যা আছে শুধু সেটাই implement করবে। কোনো feature/framework/lib এই ফাইলে না থাকলে user-কে জিজ্ঞেস করবে, নিজে সিদ্ধান্ত নেবে না।
@@ -69,9 +70,9 @@
 | Frontend Styling | **Tailwind CSS + shadcn/ui** | latest |
 | Browser Automation | **Playwright** | latest |
 | PDF | Playwright `page.pdf()` | — |
-| DB | **Supabase (PostgreSQL)** | — |
-| Storage | **Supabase Storage** | — |
-| LLM | **Google Gemini 2.5 Flash** | `@google/genai` |
+| DB | **PocketBase (SQLite)** | — |
+| Storage | **PocketBase files** | — |
+| LLM | **Groq `qwen/qwen3.8-27b`** | OpenAI-compatible REST |
 | SERP API | **Serper.dev** | REST |
 | Domain Authority | **OpenPageRank API** (free tier) | REST |
 | Performance | **Lighthouse** + **chrome-launcher** | latest |
@@ -759,11 +760,12 @@ metrics: {
 **API call:**
 
 ```
-GET https://openpagerank.com/api/v1.0/getPageRank?domains[]={domain}
-Header: API-OPR: {OPENPAGERANK_API_KEY}
+POST https://openpagerank.keywordseverywhere.com/v1/domains/bulk
+Header: Authorization: Bearer {OPENPAGERANK_API_KEY}
+Body: { "domains": ["example.com"], "include_history": false }
 ```
 
-Response gives `page_rank_integer` (0-10) per domain.
+Response gives `results[].open_page_rank` (0-10, decimal) per domain.
 
 **Score:**
 
@@ -798,7 +800,7 @@ metrics: {
 ```
 
 **Known limitation (spec-level, not a bug):** no free source exposes a backlink
-profile. OpenPageRank returns only `page_rank_integer` / `page_rank_decimal`, so
+profile. OpenPageRank returns only one domain-rank number, so
 authority here is one domain-rank number. The report states this in the Off-Page
 summary rather than asking the reader to check anchor text or referring domains
 that nothing in the pipeline could have measured. The seam for a real backlink
@@ -1412,10 +1414,11 @@ Response (polled every 2s by frontend):
 ```bash
 # Backend (apps/api)
 PORT=4000
-SUPABASE_URL=https://xxx.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=xxx
-SUPABASE_ANON_KEY=xxx
-GEMINI_API_KEY=xxx
+POCKETBASE_URL=http://127.0.0.1:8090
+POCKETBASE_ADMIN_EMAIL=admin@rostify.local
+POCKETBASE_ADMIN_PASSWORD=xxx
+GROQ_API_KEY=xxx
+GROQ_MODEL=qwen/qwen3.8-27b
 SERPER_API_KEY=xxx
 OPENPAGERANK_API_KEY=xxx
 WEB_BASE_URL=http://localhost:3000
@@ -1574,9 +1577,9 @@ Demo URL-এ (e.g., একটা local agency site):
 1. **Spec unclear?** → Ask user, do not guess.
 2. **Library version conflict?** → Let pnpm resolve; don't force.
 3. **Playwright browser missing?** → `pnpm exec playwright install chromium`
-4. **Gemini 429 rate-limit?** → 3 retries with exponential backoff (1s, 2s, 4s), then fail that step gracefully.
-5. **Supabase connection fail?** → Check env vars, verify project active in dashboard.
-6. **Screenshot upload fail?** → Verify bucket name and service-role key.
+4. **Groq 429 rate-limit?** → honour `retry-after`, 3 retries with exponential backoff, then fail that step gracefully.
+5. **PocketBase connection fail?** → Check `POCKETBASE_URL`, make sure `./pb/pocketbase.exe serve` is running.
+6. **Screenshot upload fail?** → Verify the `audits` collection exists (`pnpm setup:pb`) and the superuser password.
 7. **Lighthouse chrome fails?** → `pnpm exec playwright install chromium` also provides chromium binary; ensure `CHROME_PATH` set if needed.
 8. **OpenPageRank 401?** → Verify API key; if unavailable, set offpage score to 40 and add finding.
 9. **Serper 401/quota?** → Stop competitor step, set `competitors=[]`, continue with target-only analyses.

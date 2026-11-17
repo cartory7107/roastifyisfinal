@@ -6,7 +6,7 @@ import type {
 } from "@rostify/shared";
 import { z } from "zod";
 
-import { generateJson, GeminiError } from "../lib/gemini.js";
+import { generateJson, LlmError } from "../lib/llm.js";
 import { sortBySeverity } from "../lib/findings.js";
 import type { SerpSnapshot } from "../lib/serper.js";
 import {
@@ -205,7 +205,7 @@ export async function analyzeContent(
       ContentLlmSchema,
     );
   } catch (err) {
-    llmError = err instanceof GeminiError ? err.message : String(err);
+    llmError = err instanceof LlmError ? err.message : String(err);
     console.warn(`[content] LLM analysis failed: ${llmError}`);
   }
 
@@ -247,7 +247,7 @@ export async function analyzeContent(
       category: "content-eeat-unavailable",
       issue: "Content analysis partially failed — E-E-A-T could not be evaluated",
       detail: `The E-E-A-T review did not run, so up to 30 content points are unearned. Cause: ${llmError}`,
-      recommendation: "Re-run the audit; verify the Gemini API key and quota.",
+      recommendation: "Re-run the audit; verify the GROQ_API_KEY and the Groq rate limit.",
       evidence: { reason: llmError },
     });
   }

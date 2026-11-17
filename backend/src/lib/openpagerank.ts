@@ -2,24 +2,39 @@ import { z } from "zod";
 
 import { withRetry } from "./retry.js";
 
-const OPR_ENDPOINT = "https://openpagerank.com/api/v1.0/getPageRank";
+/**
+ * OpenPageRank (Keywords Everywhere) bulk domain endpoint. The legacy domcop
+ * `getPageRank` endpoint and its `API-OPR` header were retired, so this uses a
+ * bearer token and a JSON POST body.
+ */
+const OPR_ENDPOINT = "https://openpagerank.keywordseverywhere.com/v1/domains/bulk";
 
 /** The API accepts up to 100 domains per call (spec §8.5). */
 const MAX_DOMAINS_PER_REQUEST = 100;
+const REQUEST_TIMEOUT_MS = 30_000;
 
-const OpenPageRankResponseSchema = z.object({
-  response: z
-    .array(
-      z.object({
-        status_code: z.number().optional(),
-        domain: z.string(),
-        page_rank_integer: z.number().optional(),
-        page_rank_decimal: z.number().optional(),
-        error: z.string().optional(),
-      }),
-    )
-    .optional(),
-});
+/**
+ * Tolerant by design: the current shape is `results[].open_page_rank`, but the
+ * older `page_rank_decimal` / `page_rank_integer` keys are still accepted so a
+ * quiet field rename cannot silently zero every domain.
+ */
+const DomainEntrySchema = z
+  .object({
+    domain: z.string().optional(),
+    open_page_rank: z.union([z.number(), z.string()]).optional(),
+    page_rank_decimal: z.union([z.number(), z.string()]).optional(),
+    page_rank_integer: z.union([z.number(), z.string()]).optional(),
+    error: z.string().optional(),
+  })
+  .passthrough();
+
+const OpenPageRankResponseSchema = z.union([
+  z.object({
+    results: z.array(DomainEntrySchema).optional(),
+    response: z.array(DomainEntrySchema).optional(),
+  }),
+  z.array(DomainEntrySchema),
+]);
 
 export type PageRankEntry = {
   domain: string;
@@ -54,10 +69,11 @@ export function isOpenPageRankConfigured(): boolean {
   return Boolean(process.env.OPENPAGERANK_API_KEY);
 }
 
-/** Auth failures will not fix themselves on retry. */
+/** Auth and bad-request failures will not fix themselves on retry. */
 function isRetryable(err: unknown): boolean {
   if (!(err instanceof OpenPageRankError)) return true;
-  return err.status === null || (err.status !== 401 && err.status !== 403);
+  if (err.status === null) return true;
+  return err.status !== 401 && err.status !== 403 && err.status !== 400;
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -66,6 +82,12 @@ function chunk<T>(items: T[], size: number): T[][] {
     chunks.push(items.slice(index, index + size));
   }
   return chunks;
+}
+
+function toScore(value: number | string | undefined): number | null {
+  const numeric = typeof value === "string" ? Number(value) : value;
+  if (typeof numeric !== "number" || !Number.isFinite(numeric)) return null;
+  return Math.max(0, Math.min(10, numeric));
 }
 
 async function fetchChunk(domains: string[]): Promise<PageRankEntry[]> {
@@ -77,16 +99,16 @@ async function fetchChunk(domains: string[]): Promise<PageRankEntry[]> {
     );
   }
 
-  const query = domains
-    .map((domain) => `domains[]=${encodeURIComponent(domain)}`)
-    .join("&");
-
   let response: Response;
   try {
-    response = await fetch(`${OPR_ENDPOINT}?${query}`, {
-      method: "GET",
-      headers: { "API-OPR": apiKey },
-      signal: AbortSignal.timeout(15_000),
+    response = await fetch(OPR_ENDPOINT, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ domains, include_history: false }),
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
   } catch (err) {
     throw new OpenPageRankError(
@@ -98,10 +120,10 @@ async function fetchChunk(domains: string[]): Promise<PageRankEntry[]> {
   }
 
   if (!response.ok) {
-    await response.body?.cancel().catch(() => undefined);
+    const detail = await response.text().catch(() => "");
     throw new OpenPageRankError(
       "request_failed",
-      `OpenPageRank responded with HTTP ${response.status}`,
+      `OpenPageRank responded with HTTP ${response.status}${detail ? `: ${detail.slice(0, 300)}` : ""}`,
       response.status,
     );
   }
@@ -127,18 +149,22 @@ async function fetchChunk(domains: string[]): Promise<PageRankEntry[]> {
     );
   }
 
-  return (parsed.data.response ?? []).map((entry) => ({
-    domain: entry.domain,
+  const entries = Array.isArray(parsed.data)
+    ? parsed.data
+    : (parsed.data.results ?? parsed.data.response ?? []);
+
+  return entries.map((entry, index) => ({
+    domain: entry.domain ?? domains[index] ?? "",
     pageRank:
-      typeof entry.page_rank_integer === "number"
-        ? Math.max(0, Math.min(10, entry.page_rank_integer))
-        : null,
+      toScore(entry.open_page_rank) ??
+      toScore(entry.page_rank_decimal) ??
+      toScore(entry.page_rank_integer),
   }));
 }
 
 /**
  * Domain authority lookup via OpenPageRank (spec §8.5), batched 100 domains
- * per request. Retries 3x with exponential backoff except for 401/403.
+ * per request. Retries 3x with exponential backoff except for 400/401/403.
  */
 export async function fetchPageRank(
   domains: string[],

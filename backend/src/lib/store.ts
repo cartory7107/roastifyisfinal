@@ -6,6 +6,7 @@ import type {
   Competitor,
   CrawlBundle,
   FinalReport,
+  KeywordResearch,
   Niche,
 } from "@rostify/shared";
 
@@ -28,6 +29,7 @@ export type AuditPatch = Partial<{
   status: AuditStatus;
   current_step: AuditStep | null;
   niche: Niche;
+  keyword_research: KeywordResearch;
   competitors: Competitor[];
   crawl_data: CrawlBundle;
   technical_analysis: CategoryAnalysis;
@@ -84,6 +86,7 @@ function toAuditRow(record: AuditRecord): AuditRow {
     current_step: (orNull(record.current_step) as AuditStep | null) ?? null,
     target_url: record.target_url,
     niche: payload.niche ?? null,
+    keyword_research: payload.keyword_research ?? null,
     competitors: payload.competitors ?? null,
     crawl_data: payload.crawl_data ?? null,
     technical_analysis: payload.technical_analysis ?? null,

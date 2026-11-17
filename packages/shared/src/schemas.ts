@@ -101,6 +101,27 @@ export const NicheSchema = z.object({
   keywords: z.array(z.string()),
 });
 
+export const KeywordSuggestionSchema = z.object({
+  keyword: z.string(),
+  volume: z.number().nullable(),
+  cpc: z.number().nullable(),
+  overlap: z.number().nullable(),
+});
+
+export const KeywordMetricSchema = z.object({
+  keyword: z.string(),
+  volume: z.number().nullable(),
+  cpc: z.number().nullable(),
+  competition: z.number().nullable(),
+  similar: z.array(KeywordSuggestionSchema).default([]),
+});
+
+export const KeywordResearchSchema = z.object({
+  country: z.string(),
+  keywords: z.array(KeywordMetricSchema),
+  error: z.enum(["rate_limited", "unavailable"]).nullable().default(null),
+});
+
 export const CompetitorSchema = z.object({
   url: z.string(),
   title: z.string(),
@@ -138,6 +159,7 @@ export const FinalReportSchema = z.object({
       da: z.number().nullable(),
     }),
   ),
+  keywords: KeywordResearchSchema.nullable().default(null),
   screenshots: z.object({
     target: z.object({ desktop: z.string(), mobile: z.string() }),
     competitors: z.array(z.object({ url: z.string(), mobile: z.string() })),
@@ -165,6 +187,7 @@ export const AuditRowSchema = z.object({
   current_step: AuditStepSchema.nullable(),
   target_url: z.string(),
   niche: NicheSchema.nullable(),
+  keyword_research: KeywordResearchSchema.nullable(),
   competitors: z.array(CompetitorSchema).nullable(),
   crawl_data: CrawlBundleSchema.nullable(),
   technical_analysis: CategoryAnalysisSchema.nullable(),

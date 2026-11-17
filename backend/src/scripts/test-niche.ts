@@ -3,7 +3,7 @@ import "dotenv/config";
 import { huntCompetitors } from "../analysts/competitor.js";
 import { classifyNiche } from "../analysts/niche.js";
 import { crawlUrl } from "../crawler/playwright.js";
-import { isGeminiConfigured } from "../lib/gemini.js";
+import { isLlmConfigured } from "../lib/llm.js";
 import { isSerperConfigured } from "../lib/serper.js";
 
 async function main(): Promise<void> {
@@ -12,13 +12,13 @@ async function main(): Promise<void> {
   console.log(`[1/3] crawling ${url}`);
   const data = await crawlUrl(url, { label: "target", screenshotMode: "local" });
 
-  if (!isGeminiConfigured()) {
-    console.log("\nGEMINI_API_KEY missing — set it in .env to test the niche classifier.");
+  if (!isLlmConfigured()) {
+    console.log("\nGROQ_API_KEY missing — set it in .env to test the niche classifier.");
     process.exitCode = 1;
     return;
   }
 
-  console.log("[2/3] classifying niche (Gemini) ...");
+  console.log("[2/3] classifying niche (Groq) ...");
   const niche = await classifyNiche(data);
   console.log(JSON.stringify(niche, null, 2));
 

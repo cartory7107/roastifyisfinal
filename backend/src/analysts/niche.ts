@@ -1,7 +1,7 @@
 import type { CrawlData, Niche } from "@rostify/shared";
 import { z } from "zod";
 
-import { generateJson } from "../lib/gemini.js";
+import { generateJson } from "../lib/llm.js";
 import { buildNichePrompt } from "../prompts/niche.js";
 
 /** Strict shape from spec §8.7 — stricter than the shared persistence schema. */
@@ -11,7 +11,7 @@ export const NicheResultSchema = z.object({
   keywords: z.array(z.string().min(3).max(80)).length(3),
 });
 
-/** Used when Gemini fails 3x — competitor hunt degrades but never breaks. */
+/** Used when the LLM fails 3x — competitor hunt degrades but never breaks. */
 export const NICHE_FALLBACK: Niche = {
   category: "unknown",
   location: "Bangladesh",
