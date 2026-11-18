@@ -131,38 +131,72 @@ export async function analyzeVision(
   );
 
   const byId = new Map(candidates.map((candidate) => [candidate.id, candidate]));
-  const sentShots = prepared
-    .map((image) => byId.get(image.label)?.shot)
-    .filter((shot): shot is VisionShot => shot !== undefined);
 
-  const metrics = {
-    targetScreenshot: target.screenshotMobileUrl,
-    imagesSent: prepared.length,
-    competitorsCompared: sentShots.filter((shot) => shot.role === "competitor")
-      .length,
-    screenshots: screenshotMetrics(prepared, candidates),
-    llmScore: null as number | null,
+  const shotsFor = (images: VisionImage[]): VisionShot[] =>
+    images
+      .map((image) => byId.get(image.label)?.shot)
+      .filter((shot): shot is VisionShot => shot !== undefined);
+
+  const metricsFor = (images: VisionImage[]): Record<string, unknown> => {
+    const shots = shotsFor(images);
+    return {
+      targetScreenshot: target.screenshotMobileUrl,
+      imagesSent: images.length,
+      competitorsCompared: shots.filter((shot) => shot.role === "competitor")
+        .length,
+      screenshots: screenshotMetrics(images, candidates),
+      llmScore: null as number | null,
+    };
   };
 
   if (prepared.length === 0) {
-    return unavailable("no screenshots could be loaded", metrics);
+    return unavailable(
+      "no screenshots could be loaded",
+      metricsFor(prepared),
+    );
   }
 
-  let llm: VisionLlmResult | null = null;
-  let llmError: string | null = null;
-  try {
-    llm = await generateJson(
-      buildVisionPrompt(sentShots),
+  const callLlm = (images: VisionImage[]): Promise<VisionLlmResult> =>
+    generateJson(
+      buildVisionPrompt(shotsFor(images)),
       VisionLlmSchema,
-      prepared.map((image) => ({
+      images.map((image) => ({
         base64: image.base64,
         mimeType: image.mimeType,
       })),
     );
+
+  let sent = prepared;
+  let llm: VisionLlmResult | null = null;
+  let llmError: string | null = null;
+
+  try {
+    llm = await callLlm(sent);
   } catch (err) {
     llmError = err instanceof LlmError ? err.message : String(err);
-    console.warn(`[vision] LLM analysis failed: ${llmError}`);
+    // Groq's free tier rejects a multi-image request with HTTP 413 (its
+    // per-minute token cap). One target screenshot still yields a usable
+    // visual verdict, so retry with a smaller bundle before giving up.
+    const targetOnly = prepared.filter((image) => image.label === "target");
+    if (err instanceof LlmError && err.status === 413 && targetOnly.length > 0) {
+      sent = targetOnly;
+      console.warn(
+        `[vision] screenshot bundle too large (${llmError}) — retrying with the target screenshot only`,
+      );
+      try {
+        llm = await callLlm(sent);
+        llmError = null;
+      } catch (retryErr) {
+        llmError =
+          retryErr instanceof LlmError ? retryErr.message : String(retryErr);
+      }
+    }
+    if (llm === null) {
+      console.warn(`[vision] LLM analysis failed: ${llmError}`);
+    }
   }
+
+  const metrics = metricsFor(sent);
 
   if (llm === null) {
     return unavailable(llmError ?? "vision model failed", metrics);
