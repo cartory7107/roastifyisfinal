@@ -94,17 +94,35 @@ export function pocketBasePublicUrl(): string {
   return env.POCKETBASE_PUBLIC_URL ?? env.POCKETBASE_URL ?? "http://127.0.0.1:8090";
 }
 
+/**
+ * Turn one configured origin into something `@fastify/cors` can match.
+ *
+ * A `*` wildcard is allowed so deployments can trust a whole PaaS domain
+ * without listing every URL, e.g. `https://*.vercel.app` (production and every
+ * preview deployment). Everything else is matched literally, so a wildcard can
+ * never accidentally widen the allowlist beyond its own host suffix.
+ */
+export function compileOriginPattern(origin: string): string | RegExp {
+  if (!origin.includes("*")) return origin;
+  const escaped = origin
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\\\*/g, ".*");
+  return new RegExp(`^${escaped}$`);
+}
+
 /** CORS allowlist: explicit `CORS_ORIGINS`, else the web app's origin. */
-export function allowedOrigins(): string[] {
-  if (env.CORS_ORIGINS !== undefined) {
-    return env.CORS_ORIGINS.split(",")
-      .map((origin) => origin.trim())
-      .filter((origin) => origin.length > 0);
-  }
-  if (env.WEB_BASE_URL !== undefined) {
-    return [env.WEB_BASE_URL.replace(/\/$/, "")];
-  }
-  return ["http://localhost:3000", "http://127.0.0.1:3000"];
+export function allowedOrigins(): (string | RegExp)[] {
+  const origins =
+    env.CORS_ORIGINS !== undefined
+      ? env.CORS_ORIGINS.split(",")
+      : env.WEB_BASE_URL !== undefined
+        ? [env.WEB_BASE_URL.replace(/\/$/, "")]
+        : ["http://localhost:3000", "http://127.0.0.1:3000"];
+
+  return origins
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0)
+    .map(compileOriginPattern);
 }
 
 /**

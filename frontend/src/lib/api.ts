@@ -1,7 +1,15 @@
 import type { AuditPollResponse } from "@rostify/shared";
 
-const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:4000";
+/**
+ * The browser bundle must call the public API host. `NEXT_PUBLIC_API_BASE_URL`
+ * (frontend/.env.production, or a Vercel project env var) wins; the fallback
+ * keeps a production build working even when no env file reaches the builder.
+ */
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  (process.env.NODE_ENV === "production"
+    ? "https://roastifys-api.cartory.top"
+    : "http://localhost:4000");
 
 export type ApiError = {
   message: string;
