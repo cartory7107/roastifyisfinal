@@ -4,6 +4,10 @@ import type { AuditPollResponse } from "@rostify/shared";
  * The browser bundle must call the public API host. `NEXT_PUBLIC_API_BASE_URL`
  * (frontend/.env.production, or a Vercel project env var) wins; the fallback
  * keeps a production build working even when no env file reaches the builder.
+ *
+ * The value may be absolute (`https://api.example.com`) or relative (`/svc`).
+ * A relative base is used by the single-container deploy, where the web app and
+ * the API share one origin behind a reverse proxy.
  */
 export const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL ??
@@ -11,13 +15,28 @@ export const API_BASE_URL =
     ? "https://roastifys-api.cartory.top"
     : "http://localhost:4000");
 
+/**
+ * Server components (the `/print` page used for PDF rendering) run in Node,
+ * where a relative base has nothing to resolve against. Inside the container
+ * the API listens on loopback, so fall back to that instead of fetching `"/svc"`.
+ */
+function serverBaseUrl(): string {
+  return process.env.INTERNAL_API_BASE_URL ?? "http://127.0.0.1:4000";
+}
+
+function resolveBaseUrl(): string {
+  if (typeof window !== "undefined") return API_BASE_URL;
+  if (/^https?:\/\//i.test(API_BASE_URL)) return API_BASE_URL;
+  return serverBaseUrl();
+}
+
 export type ApiError = {
   message: string;
   status: number;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE_URL}${path}`, {
+  const res = await fetch(`${resolveBaseUrl()}${path}`, {
     ...init,
     headers: { "content-type": "application/json", ...init?.headers },
     cache: "no-store",

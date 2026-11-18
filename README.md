@@ -206,6 +206,10 @@ Oracle Always Free VM-এ web + API + PocketBase + Cloudflare Tunnel, আর `ma
 push করলেই GitHub Actions নিজে থেকে ডিপ্লয় করে (`docker-compose.prod.yml` +
 `.github/workflows/deploy.yml`)।
 
+**Hugging Face Space (এক কনটেইনার, PC ছাড়া):**
+[`deploy/huggingface/README.md`](deploy/huggingface/README.md) — web + API +
+PocketBase একসাথে পোর্ট 7860-এ, reverse proxy দিয়ে `/svc` আর `/api` রাউটিং।
+
 Manual/self-hosted path: **`DEPLOY.md`** has the full walkthrough
 (`cp .env.example .env`, `docker compose up -d --build`). In short:
 
