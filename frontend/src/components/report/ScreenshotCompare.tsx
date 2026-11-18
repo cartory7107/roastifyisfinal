@@ -17,11 +17,16 @@ function Frame({
   label,
   sublabel,
   tone = "muted",
+  width = 1440,
+  height = 900,
 }: {
   src: string;
   label: string;
   sublabel?: string;
   tone?: "target" | "competitor" | "muted";
+  /** Intrinsic capture size, reserved before the lazy image loads. */
+  width?: number;
+  height?: number;
 }) {
   return (
     <figure
@@ -50,8 +55,10 @@ function Frame({
       <img
         src={src}
         alt={`${label} screenshot`}
+        width={width}
+        height={height}
         loading="lazy"
-        className="block w-full bg-secondary/40 object-cover object-top"
+        className="block h-auto w-full bg-secondary/40 object-cover object-top"
       />
       {sublabel ? (
         <figcaption className="border-t border-border px-3 py-2 text-[11px] text-muted-foreground">
@@ -100,6 +107,8 @@ export function ScreenshotCompare({
         >
           <Frame
             src={target.mobile}
+            width={390}
+            height={844}
             label={siteHost ? `${siteHost} (you)` : "Your site"}
             tone="target"
           />
@@ -107,6 +116,8 @@ export function ScreenshotCompare({
             <Frame
               key={competitor.url}
               src={competitor.mobile}
+              width={390}
+              height={844}
               label={hostOf(competitor.url)}
               sublabel={competitor.url}
             />
