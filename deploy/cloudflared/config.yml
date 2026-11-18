@@ -1,0 +1,19 @@
+# Cloudflare Tunnel ingress for the production host.
+#
+# The tunnel ID and hostnames are the ones already used by the project, so DNS
+# does not change. Only the connector moves: from the PC to this server.
+#
+# Put the tunnel credentials next to this file as `credentials.json` (download
+# it from Zero Trust -> Networks -> Tunnels -> your tunnel -> Configure, or copy
+# %USERPROFILE%\.cloudflared\<tunnel-id>.json). That file is gitignored.
+tunnel: 16a4602f-97ac-4029-9451-43dc2ad4dbb6
+credentials-file: /etc/cloudflared/credentials.json
+
+ingress:
+  - hostname: roastifys.cartory.top
+    service: http://web:3000
+  - hostname: roastifys-api.cartory.top
+    service: http://api:4000
+  - hostname: roastifys-pb.cartory.top
+    service: http://pocketbase:8090
+  - service: http_status:404

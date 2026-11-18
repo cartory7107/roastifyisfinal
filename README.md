@@ -201,7 +201,12 @@ CI (`.github/workflows/ci.yml`) runs install → typecheck → lint → test →
 
 ## Deploying
 
-Docker Compose is the supported path — `DEPLOY.md` has the full walkthrough
+**PC ছাড়া push-to-deploy:** [`deploy/README.md`](deploy/README.md) — একটাই ফ্রি
+Oracle Always Free VM-এ web + API + PocketBase + Cloudflare Tunnel, আর `main`-এ
+push করলেই GitHub Actions নিজে থেকে ডিপ্লয় করে (`docker-compose.prod.yml` +
+`.github/workflows/deploy.yml`)।
+
+Manual/self-hosted path: **`DEPLOY.md`** has the full walkthrough
 (`cp .env.example .env`, `docker compose up -d --build`). In short:
 
 - Run **one** API instance: concurrency limits and the write queue are in-process.

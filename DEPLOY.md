@@ -1,5 +1,10 @@
 # Deploying Rostify
 
+> **PC ছাড়া পুরো প্রোডাক্ট চালাতে চাইলে:** [`deploy/README.md`](deploy/README.md)
+> ফলো করো — একটাই ফ্রি VM-এ web + API + PocketBase + Cloudflare Tunnel, আর
+> `main`-এ push করলেই GitHub Actions অটো ডিপ্লয় করে। নিচের অংশটা হাতে
+> (manual) ডিপ্লয়ের রেফারেন্স, একই স্ট্যাকের ভ্যারিয়েবলগুলো এখানে বিস্তারিত।
+
 Three processes, one host:
 
 | Service | Image | Why it needs what it needs |

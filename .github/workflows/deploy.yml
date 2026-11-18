@@ -1,0 +1,80 @@
+name: Deploy
+
+# Push-to-deploy for the whole product (web + API + PocketBase + tunnel).
+#
+# Runs on a self-hosted runner installed on the production host, so pushing to
+# main rebuilds and restarts the Docker stack there. Vercel keeps deploying the
+# frontend on its own if that project stays connected; both point at the same
+# public API.
+#
+# Secrets are NOT kept in the checkout (actions/checkout cleans untracked
+# files). They live in /opt/rostify/secrets/ and are copied in on every run:
+#
+#   /opt/rostify/secrets/.env                        -> ./.env
+#   /opt/rostify/secrets/cloudflared-credentials.json -> ./deploy/cloudflared/credentials.json
+#
+# One-time setup (create the host, secrets, runner): see deploy/README.md.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    timeout-minutes: 40
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install production secrets
+        run: |
+          set -euo pipefail
+          SECRETS=/opt/rostify/secrets
+
+          if [ ! -f "$SECRETS/.env" ]; then
+            echo "::error::Missing $SECRETS/.env. Copy deploy/.env.example there and fill the keys (deploy/README.md, step 3)."
+            exit 1
+          fi
+          if [ ! -f "$SECRETS/cloudflared-credentials.json" ]; then
+            echo "::error::Missing $SECRETS/cloudflared-credentials.json (deploy/README.md, step 4)."
+            exit 1
+          fi
+
+          cp "$SECRETS/.env" .env
+          chmod 600 .env
+
+          mkdir -p deploy/cloudflared
+          cp "$SECRETS/cloudflared-credentials.json" deploy/cloudflared/credentials.json
+          chmod 600 deploy/cloudflared/credentials.json
+
+      - name: Build the API image once
+        # `init` and `api` share the same image tag; building it up front avoids
+        # two parallel builds racing for the tag.
+        run: docker compose -f docker-compose.prod.yml build api
+
+      - name: Build and start the stack
+        run: docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+      - name: Wait for the API
+        run: |
+          set -uo pipefail
+          for attempt in $(seq 1 80); do
+            if docker compose -f docker-compose.prod.yml exec -T api \
+              node -e "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then
+              echo "API is healthy"
+              docker compose -f docker-compose.prod.yml ps
+              exit 0
+            fi
+            sleep 3
+          done
+
+          echo "::error::API did not become healthy"
+          docker compose -f docker-compose.prod.yml ps
+          docker compose -f docker-compose.prod.yml logs --tail=100 api init pocketbase
+          exit 1

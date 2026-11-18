@@ -57,17 +57,24 @@ filesystem, and Hobby functions are cut off long before an audit finishes. The
 engine also cannot be split into serverless pieces without removing the very
 features that make the report useful.
 
-The free, always-on option for the engine is an **Oracle Cloud Always Free**
-VM (Ampere A1: up to 4 OCPU / 24 GB RAM, no time limit):
+## Recommended: run the whole product on one free host
+
+The repository already contains a one-host stack (`docker-compose.prod.yml`)
+plus a push-to-deploy workflow (`.github/workflows/deploy.yml`). Follow
+[`deploy/README.md`](deploy/README.md): create an **Oracle Cloud Always Free**
+Ampere A1 VM, install Docker, drop the secrets in `/opt/rostify/secrets/`,
+register a self-hosted GitHub runner, and every push to `main` rebuilds web +
+API + PocketBase + tunnel automatically.
+
+Why Oracle Always Free (Ampere A1: up to 4 OCPU / 24 GB RAM, no time limit):
 
 1. Create the account at <https://cloud.oracle.com> (card for identity
    verification only; the Always Free resources are not charged).
-2. Create an Ubuntu 22.04 Ampere A1 instance and open ports `80`/`443` (or keep
-   using the Cloudflare Tunnel, in which case no inbound ports are needed).
-3. Run the repository's `docker-compose.yml` (`cp .env.example .env` first) –
-   see `DEPLOY.md` for every variable.
-4. Point the `roastifys-api` / `roastifys-pb` tunnel hostnames, or their DNS
-   records, at the VM.
+2. Create an Ubuntu 22.04 Ampere A1 instance — no inbound ports needed, the
+   Cloudflare Tunnel connector makes outbound connections only.
+3. Copy `deploy/.env.example` into `/opt/rostify/secrets/.env`, add the keys.
+4. Copy the existing tunnel credentials next to it and run the deploy workflow.
 
 Nothing in the frontend changes during that migration: the public API URL stays
-`https://roastifys-api.cartory.top`.
+`https://roastifys-api.cartory.top`, so Vercel can keep serving the web app
+alongside the VM, or the VM can serve everything on its own.

@@ -19,3 +19,10 @@ test-results/
 
 # Design reference (Stitch exports, screenshots) — not needed to build or run.
 frontend/stitch_rostify_ai_seo_audit_platform/
+
+# Production host secrets. The server keeps its own copies; never commit them.
+deploy/.env
+deploy/.env.local
+deploy/cloudflared/credentials.json
+deploy/cloudflared/*.json
+deploy/cloudflared/cert.pem

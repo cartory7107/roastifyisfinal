@@ -1,0 +1,120 @@
+# One-host production stack with push-to-deploy.
+#
+# Everything the product needs runs here: PocketBase (data + files), the
+# Fastify audit engine (Chromium, Lighthouse, PDF), the Next.js web app, and
+# the Cloudflare Tunnel connector that publishes all three hostnames.
+#
+#   cp deploy/.env.example .env          # then fill the keys once
+#   docker compose -f docker-compose.prod.yml up -d --build
+#
+# On a self-hosted GitHub runner this file is rebuilt automatically on every
+# push to main (see .github/workflows/deploy.yml).
+#
+# Only loopback ports are published; the public traffic arrives through
+# cloudflared, so no inbound firewall rule is needed.
+
+name: rostify
+
+x-api: &api
+  build:
+    context: .
+    dockerfile: backend/Dockerfile
+  image: rostify-api:local
+
+services:
+  pocketbase:
+    image: ghcr.io/muchobien/pocketbase:latest
+    restart: unless-stopped
+    # The image runs `superuser upsert` on every boot, so the account exists
+    # even on a brand-new volume. Values come from .env (POCKETBASE_ADMIN_*).
+    environment:
+      PB_ADMIN_EMAIL: ${POCKETBASE_ADMIN_EMAIL}
+      PB_ADMIN_PASSWORD: ${POCKETBASE_ADMIN_PASSWORD}
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - pb_data:/pb_data
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8090/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  # One-shot: creates the `audits` collection and raises the JSON cap on an
+  # existing install. Idempotent, so it runs safely on every deploy.
+  init:
+    <<: *api
+    restart: "no"
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      POCKETBASE_URL: http://pocketbase:8090
+    command: ["node", "backend/dist/scripts/setup-pocketbase.js"]
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+
+  api:
+    <<: *api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      # Container-internal addresses; the browser never uses these.
+      POCKETBASE_URL: http://pocketbase:8090
+      WEB_BASE_URL: http://web:3000
+      TRUST_PROXY: "true"
+      # Never allow private-network targets in production (SSRF).
+      ALLOW_PRIVATE_HOSTS: "false"
+    ports:
+      - "127.0.0.1:4000:4000"
+    depends_on:
+      pocketbase:
+        condition: service_healthy
+      init:
+        condition: service_completed_successfully
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))",
+        ]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  web:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+      args:
+        # Baked into the client bundle at build time: the public API host.
+        NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-https://roastifys-api.cartory.top}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+
+  # Publishes roastifys / roastifys-api / roastifys-pb exactly as before, but
+  # from this host instead of a PC. Credentials live in deploy/cloudflared/
+  # (gitignored).
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --config /etc/cloudflared/config.yml run
+    volumes:
+      - ./deploy/cloudflared:/etc/cloudflared:ro
+    depends_on:
+      - web
+      - api
+      - pocketbase
+
+volumes:
+  pb_data:
