@@ -49,7 +49,7 @@ describe("configuration helpers", () => {
     vi.stubEnv("OLLAMA_API_KEY", "ollama_test");
     vi.stubEnv("OLLAMA_MODEL", "");
     expect(configuredProviders()).toEqual(["ollama", "groq"]);
-    expect(llmModelName()).toBe("gemma4:31b");
+    expect(llmModelName()).toBe("glm-5.3-flash");
 
     vi.stubEnv("LLM_PROVIDER", "groq");
     expect(configuredProviders()).toEqual(["groq"]);
@@ -162,7 +162,7 @@ describe("generateJson", () => {
     );
 
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body.model).toBe("gemma4:31b");
+    expect(body.model).toBe("glm-5.3-flash");
     expect(body.max_tokens).toBe(4096);
     expect(body.max_completion_tokens).toBeUndefined();
     expect(body.response_format).toEqual({ type: "json_object" });

@@ -7,7 +7,7 @@ import { sleep, withRetry } from "./retry.js";
  * Both supported providers speak the OpenAI chat-completions dialect, so one
  * request builder serves them:
  *
- * - Ollama Cloud — pay per token, larger multimodal models (`gemma4:31b`).
+ * - Ollama Cloud — pay per token, larger multimodal models (`glm-5.3-flash`).
  * - Groq — free tier with an 8K tokens/minute budget (`qwen/qwen3.8-27b`).
  *
  * `LLM_PROVIDER=auto` (the default) prefers Ollama Cloud when its key is set
@@ -19,7 +19,7 @@ export type LlmProvider = "ollama" | "groq";
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_GROQ_MODEL = "qwen/qwen3.8-27b";
 const DEFAULT_OLLAMA_BASE_URL = "https://ollama.com/v1";
-const DEFAULT_OLLAMA_MODEL = "gemma4:31b";
+const DEFAULT_OLLAMA_MODEL = "glm-5.3-flash";
 
 /** Groq bills every image as a flat 2048 input tokens (vision docs). */
 const IMAGE_TOKENS = 2048;

@@ -36,7 +36,7 @@ const EnvSchema = z.object({
     (value) => (value === "" ? undefined : value),
     z.string().url().default("https://ollama.com/v1"),
   ),
-  /** Cloud model id from https://ollama.com/api/tags, e.g. `gemma4:31b`. */
+  /** Cloud model id from https://ollama.com/api/tags, e.g. `glm-5.3-flash`. */
   OLLAMA_MODEL: optionalString,
   GROQ_API_KEY: optionalString,
   GROQ_MODEL: optionalString,

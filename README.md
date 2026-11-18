@@ -13,7 +13,7 @@ plus a PDF.
 | Backend    | Fastify 4 + TypeScript (ESM), Zod-validated config                  |
 | Database   | PocketBase 0.40 (SQLite + file storage, single binary)              |
 | Crawling   | Playwright (Chromium) + Lighthouse                                  |
-| Analysis   | Ollama Cloud (`gemma4:31b`) with Groq (`qwen/qwen3.8-27b`) fallback, both via the OpenAI-compatible API; Serper for SERP; Open PageRank for DA |
+| Analysis   | Ollama Cloud (`glm-5.3-flash`) with Groq (`qwen/qwen3.8-27b`) fallback, both via the OpenAI-compatible API; Serper for SERP; Open PageRank for DA |
 | Monorepo   | pnpm workspaces (`frontend`, `backend`, `packages/shared`)          |
 
 ## Repository layout
@@ -100,7 +100,7 @@ pnpm dev        # API on :4000, web on :3000
 | `LLM_PROVIDER`             | no       | `auto`                  | `auto` = Ollama Cloud then Groq, or pin `ollama` / `groq`    |
 | `OLLAMA_API_KEY`           | no       | –                       | Enables LLM analyses on Ollama Cloud (paid per token)        |
 | `OLLAMA_BASE_URL`          | no       | `https://ollama.com/v1` | OpenAI-compatible endpoint                                   |
-| `OLLAMA_MODEL`             | no       | `gemma4:31b`            | Cloud model; must be multimodal for the screenshot review     |
+| `OLLAMA_MODEL`             | no       | `glm-5.3-flash`         | Cloud model; must be multimodal for the screenshot review     |
 | `GROQ_API_KEY`             | no       | –                       | Enables LLM analyses / acts as fallback                      |
 | `GROQ_MODEL`               | no       | `qwen/qwen3.8-27b`      | Groq model (must be multimodal for the screenshot review)    |
 | `LLM_TOKENS_PER_MINUTE`    | no       | `8000`                  | Groq free-tier token budget per minute (Groq only)            |
