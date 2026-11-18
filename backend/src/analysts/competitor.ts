@@ -26,6 +26,21 @@ const BLOCK_LIST = [
 const MAX_COMPETITORS = 2;
 const RESULTS_PER_KEYWORD = 10;
 
+/**
+ * Locations that carry no geo signal: appending them to a search query would
+ * pull results from the wrong market (spec rule: never pigeonhole a global
+ * SaaS/store/content site into a local market). Only an explicitly detected
+ * place qualifies.
+ */
+const NON_LOCATIONS = new Set(["not detectable", "unknown", "global", "worldwide"]);
+
+function usableLocation(location: string | undefined): string | null {
+  const trimmed = (location ?? "").trim();
+  if (trimmed.length === 0) return null;
+  if (NON_LOCATIONS.has(trimmed.toLowerCase())) return null;
+  return trimmed;
+}
+
 /** `www.example.com` → `example.com`; returns null for unparseable links. */
 function normalizeDomain(link: string): string | null {
   try {
@@ -51,9 +66,10 @@ export async function huntCompetitors(
 ): Promise<Competitor[]> {
   const targetDomain = normalizeDomain(targetUrl);
   const candidates = new Map<string, Competitor>();
+  const location = usableLocation(niche.location);
 
   for (const keyword of niche.keywords) {
-    const query = `${keyword} ${niche.location}`;
+    const query = location === null ? keyword : `${keyword} ${location}`;
 
     let organic: { link: string; title: string; snippet: string }[];
     try {

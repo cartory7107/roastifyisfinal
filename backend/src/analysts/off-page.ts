@@ -8,7 +8,9 @@ import {
 } from "../lib/openpagerank.js";
 import { offPageScore } from "../lib/scoring.js";
 
-/** Neutral score used when authority data cannot be fetched (spec §8.5). */
+/** Neutral score used when authority data cannot be fetched (spec §8.5).
+ * The placeholder is EXCLUDED from the overall score (see scoring.ts) and the
+ * finding says so, so a broken API never reads as a definitive penalty. */
 const NEUTRAL_SCORE = 40;
 
 /** A competitor average this far above the target is a competitive gap. */
@@ -52,17 +54,22 @@ function limitedAnalysis(reason: string): CategoryAnalysis {
   const finding: Finding = {
     severity: "medium",
     category: "offpage-unavailable",
-    issue: "Off-Page analysis limited — API unavailable",
-    detail: `Domain authority for the target and its competitors could not be retrieved, so the off-page score is a neutral placeholder. Cause: ${reason}`,
+    issue: "Off-Page check temporarily unavailable — API runner limit",
+    detail:
+      "Temporarily Unavailable due to API Runner Limit: domain authority for the target and its competitors could not be retrieved, so no off-page verdict is issued. " +
+      "The placeholder score below is excluded from the overall score. Cause: " +
+      reason,
     recommendation:
-      "Re-run the audit once OPENPAGERANK_API_KEY is configured and the OpenPageRank API is reachable.",
-    evidence: { reason },
+      "Re-run the audit once OPENPAGERANK_API_KEY is valid and the OpenPageRank API is reachable; the off-page score will then be measured, not estimated.",
+    evidence: { reason, measurement: "unavailable" },
   };
 
   return {
     score: NEUTRAL_SCORE,
+    measurement: "unavailable",
+    measurement_reason: reason,
     findings: [finding],
-    summary: `Off-Page score ${NEUTRAL_SCORE}/100 (neutral) — domain authority could not be measured.`,
+    summary: `Off-Page temporarily unavailable — domain authority could not be measured (API runner limit: ${reason}). Placeholder score ${NEUTRAL_SCORE} is excluded from the overall.`,
     metrics: {
       openPageRank: null,
       competitorsAvg: null,

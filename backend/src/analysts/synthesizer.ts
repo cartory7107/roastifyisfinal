@@ -47,18 +47,21 @@ export type SynthesizerInput = {
   durationMs: number;
 };
 
-/** Numeric-only part of the overall score (spec §9.7/§9.8). */
+/** Numeric-only part of the overall score (spec §9.7/§9.8).
+ * Categories marked unavailable are excluded and their weight is
+ * renormalized across the measured ones, so a failed external check can
+ * never drag the overall score down. */
 export function overallFromAnalyses(analyses: Record<CategoryKey, CategoryAnalysis>): {
   overall: number;
   grade: Grade;
 } {
   const overall = overallScore({
-    technical: analyses.technical.score,
-    onpage: analyses.onpage.score,
-    content: analyses.content.score,
-    performance: analyses.performance.score,
-    offpage: analyses.offpage.score,
-    ai_readiness: analyses.ai_readiness.score,
+    technical: analyses.technical,
+    onpage: analyses.onpage,
+    content: analyses.content,
+    performance: analyses.performance,
+    offpage: analyses.offpage,
+    ai_readiness: analyses.ai_readiness,
   });
   return { overall, grade: letterGrade(overall) };
 }

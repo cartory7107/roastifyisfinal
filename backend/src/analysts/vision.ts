@@ -91,17 +91,21 @@ function unavailable(
   const finding: Finding = {
     severity: "medium",
     category: "uiux-unavailable",
-    issue: "Visual analysis unavailable",
-    detail: `The screenshot comparison did not run, so a neutral score of ${NEUTRAL_SCORE} was applied. Cause: ${reason}`,
+    issue: "Visual check temporarily unavailable — API runner limit",
+    detail:
+      "Temporarily Unavailable due to API Runner Limit: the screenshot comparison did not run, so no UI/UX verdict is issued. " +
+      `The neutral score of ${NEUTRAL_SCORE} below is excluded from the overall score. Cause: ${reason}`,
     recommendation:
       "Re-run the audit; verify the GROQ_API_KEY and the Groq rate limit, and that screenshots uploaded successfully.",
-    evidence: { reason },
+    evidence: { reason, measurement: "unavailable" },
   };
 
   return {
     score: NEUTRAL_SCORE,
+    measurement: "unavailable",
+    measurement_reason: reason,
     findings: [finding],
-    summary: `Visual analysis unavailable — neutral score ${NEUTRAL_SCORE}/100 applied.`,
+    summary: `Visual analysis temporarily unavailable — the screenshot comparison could not run (API runner limit: ${reason}). Placeholder score ${NEUTRAL_SCORE} is excluded from the overall.`,
     metrics: { ...metrics, failureReason: reason },
   };
 }

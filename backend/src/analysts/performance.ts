@@ -4,7 +4,18 @@ import {
   runLighthouse,
   type LighthouseMetrics,
 } from "../crawler/lighthouse.js";
-import { performanceScore } from "../lib/scoring.js";
+import {
+  clsScore,
+  lcpScore,
+  performanceScore,
+} from "../lib/scoring.js";
+
+/**
+ * A TBT proxy reading above this is treated as an anomalous run (layout
+ * thrash in the headless runner, a hung request, a broken load) rather than a
+ * definitive INP penalty: it is reported as unmeasured instead of scored.
+ */
+const TBT_PROXY_ANOMALY_MS = 8_000;
 
 /**
  * Severity thresholds (spec §8.4 findings): LCP > 4.0s critical,
@@ -71,11 +82,37 @@ function summaryFor(score: number, findings: Finding[]): string {
   return `${head} Needs attention: ${priorities}.`;
 }
 
+function unavailable(
+  reason: string,
+  metrics: Record<string, unknown>,
+): CategoryAnalysis {
+  const finding: Finding = {
+    severity: "medium",
+    category: "performance-unmeasured",
+    issue: "Performance check temporarily unavailable — runner limit",
+    detail:
+      "Temporarily Unavailable due to API Runner Limit: the Lighthouse run did not produce data, so LCP, INP and CLS are unknown and no performance verdict is issued. " +
+      "The placeholder score below is excluded from the overall score. Cause: " +
+      reason,
+    recommendation:
+      "Verify the site is publicly reachable and Chrome can launch, then re-run the audit.",
+    evidence: { reason, measurement: "unavailable" },
+  };
+  return {
+    score: 0,
+    measurement: "unavailable",
+    measurement_reason: reason,
+    findings: [finding],
+    summary: `Performance temporarily unavailable — the Lighthouse run failed (${reason}). Placeholder score is excluded from the overall.`,
+    metrics,
+  };
+}
+
 /**
  * Performance analyst (spec §8.4) — Lighthouse on the target only.
- * On any Lighthouse failure (chrome launch, network, 60s timeout) the
- * metrics are null, the score is 0, and a single "Performance could not
- * be measured" finding is returned (spec §8.4 failure mode).
+ * On any Lighthouse failure (chrome launch, network, 60s timeout) the metrics
+ * are unknown: the category is marked unavailable and EXCLUDED from the
+ * overall score rather than presented as a 0/100 penalty.
  */
 export async function analyzePerformance(url: string): Promise<CategoryAnalysis> {
   let metrics: LighthouseMetrics;
@@ -83,30 +120,16 @@ export async function analyzePerformance(url: string): Promise<CategoryAnalysis>
     metrics = await runLighthouse(url);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
-    const finding: Finding = {
-      severity: "critical",
-      category: "performance-unmeasured",
-      issue: "Performance could not be measured",
-      detail: `The Lighthouse run failed, so LCP, INP, and CLS are unknown. Cause: ${reason}`,
-      recommendation:
-        "Verify the site is publicly reachable and Chrome can launch, then re-run the audit.",
-      evidence: { reason },
-    };
-    return {
-      score: 0,
-      findings: [finding],
-      summary: `Performance score 0/100 — Performance could not be measured (${reason}).`,
-      metrics: {
-        lcp_seconds: null,
-        inp_ms: null,
-        cls: null,
-        tbt_ms: null,
-        fcp_seconds: null,
-        speed_index_seconds: null,
-        inp_source: null,
-        reason,
-      },
-    };
+    return unavailable(reason, {
+      lcp_seconds: null,
+      inp_ms: null,
+      cls: null,
+      tbt_ms: null,
+      fcp_seconds: null,
+      speed_index_seconds: null,
+      inp_source: null,
+      reason,
+    });
   }
 
   const { lcpSeconds, inpMs, cls } = metrics;
@@ -114,26 +137,63 @@ export async function analyzePerformance(url: string): Promise<CategoryAnalysis>
   // A run that produced no CWV data at all is treated as unmeasurable.
   if (lcpSeconds === null || inpMs === null || cls === null) {
     const reason = "Lighthouse reported no Core Web Vitals data";
+    return unavailable(reason, {
+      lcp_seconds: null,
+      inp_ms: null,
+      cls: null,
+      tbt_ms: metrics.tbtMs === null ? null : Math.round(metrics.tbtMs),
+      fcp_seconds:
+        metrics.fcpSeconds === null ? null : Number(metrics.fcpSeconds.toFixed(2)),
+      speed_index_seconds:
+        metrics.speedIndexSeconds === null
+          ? null
+          : Number(metrics.speedIndexSeconds.toFixed(2)),
+      inp_source: metrics.inpSource,
+      reason,
+    });
+  }
+
+  // An absurd TBT proxy reading (12,000ms+) is an anomalous runner run, not a
+  // measured interaction delay: exclude it instead of penalizing definitively.
+  if (metrics.inpSource === "tbt" && inpMs >= TBT_PROXY_ANOMALY_MS) {
+    const reason = `TBT proxy reading is anomalous (${Math.round(inpMs)}ms ≥ ${TBT_PROXY_ANOMALY_MS}ms threshold)`;
+    const renormalized = Math.round(
+      (0.4 * lcpScore(lcpSeconds) + 0.3 * clsScore(cls)) / 0.7,
+    );
     const finding: Finding = {
-      severity: "critical",
-      category: "performance-unmeasured",
-      issue: "Performance could not be measured",
-      detail: `The Lighthouse run completed but returned no LCP/INP/CLS values. Cause: ${reason}`,
-      recommendation: "Re-run the audit; if it persists, check the page's load behavior.",
-      evidence: { reason },
+      severity: "low",
+      category: "performance-tbt-anomaly",
+      issue: `TBT reading anomalous (${Math.round(inpMs)}ms) — excluded from scoring`,
+      detail:
+        "Temporarily Unavailable due to API Runner Limit: the headless runner's total blocking time is far outside plausible range, so it is treated as unmeasured rather than a definitive INP penalty. " +
+        "The performance score is renormalized from the measured LCP and CLS only.",
+      recommendation:
+        "Re-run the audit; if the anomaly persists, measure INP with real interaction data in PageSpeed Insights.",
+      evidence: {
+        tbt_ms: Math.round(inpMs),
+        anomaly_threshold_ms: TBT_PROXY_ANOMALY_MS,
+        measurement: "unavailable",
+      },
     };
     return {
-      score: 0,
-      findings: [finding],
-      summary: `Performance score 0/100 — Performance could not be measured.`,
+      score: renormalized,
+      findings: [
+        finding,
+        ...cwvFindings({ ...metrics, inpMs: null, inpSource: null }),
+      ],
+      summary: `Performance score ${renormalized}/100 from LCP and CLS only — ${reason}.`,
       metrics: {
-        lcp_seconds: null,
+        lcp_seconds: Number(lcpSeconds.toFixed(2)),
         inp_ms: null,
-        cls: null,
-        tbt_ms: metrics.tbtMs,
-        fcp_seconds: metrics.fcpSeconds,
-        speed_index_seconds: metrics.speedIndexSeconds,
-        inp_source: metrics.inpSource,
+        cls: Number(cls.toFixed(3)),
+        tbt_ms: Math.round(metrics.tbtMs ?? inpMs),
+        fcp_seconds:
+          metrics.fcpSeconds === null ? null : Number(metrics.fcpSeconds.toFixed(2)),
+        speed_index_seconds:
+          metrics.speedIndexSeconds === null
+            ? null
+            : Number(metrics.speedIndexSeconds.toFixed(2)),
+        inp_source: "unmeasured_anomaly",
         reason,
       },
     };

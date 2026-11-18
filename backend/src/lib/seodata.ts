@@ -159,6 +159,19 @@ async function requestKeyword(
     );
   }
 
+  if (response.status === 404) {
+    // A keyword outside the provider's index is "no data", not an error:
+    // retrying cannot make it appear and it would fail the whole batch.
+    await response.body?.cancel().catch(() => undefined);
+    return {
+      keyword,
+      volume: null,
+      cpc: null,
+      competition: null,
+      similar: [],
+    };
+  }
+
   if (response.status === 429) {
     await response.body?.cancel().catch(() => undefined);
     throw new SeoDataError(

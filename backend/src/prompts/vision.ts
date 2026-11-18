@@ -55,6 +55,8 @@ Assess:
 - Mobile usability. Font size, tap target size, line length, density. Reference the specific elements.
 - Gap. What a competitor shows in its first screen that this one does not.
 
+Placeholder rule: only report a placeholder or dummy stat ("0+", "0%", "Lorem ipsum") when that exact string is actually visible in the screenshot, and quote the visible text in "detail". Never assume a counter is a static placeholder; a rendered "0" that you cannot verify is not a finding. Judge the screen for what it is — do not expect a software or digital-product landing page to show brick-and-mortar trust signals such as street addresses.
+
 Score 0-100. Above 80 reads as a site you would trust with a card number. 50 to 70 has the elements but buries them. Below 50, the visitor cannot tell what is being sold.
 
 ${ANTI_SLOP_RULES}

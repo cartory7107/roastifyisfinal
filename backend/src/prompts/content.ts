@@ -114,6 +114,9 @@ STEP 2 — SEMANTIC DEPTH.
 List the entities (products, tools, standards, roles, places, costs), the predicates (the verbs a practitioner in this field uses, which are not the verbs a generalist uses), and the entity-attribute-value pairs that appear in the competitor bodies but are absent from the target. Name the missing ones specifically. "Add more detail" is not an acceptable answer here.
 
 STEP 3 — E-E-A-T.
+First, classify the target's platform type from the evidence (AI/SaaS tool, developer tool, e-commerce, course/education, digital-assets, creator brand, community, media/publication, local service). Judge every E-E-A-T component against what this type of platform can realistically demonstrate. Do not force brick-and-mortar proof onto a digital product: for software/SaaS, documentation quality, changelogs, API references, status/uptime pages, integration listings, named team members and open-source activity count as authority; for e-commerce, product depth, policies and verifiable reviews; for a creator or publication, author identity and a body of dated published work. A SaaS tool with no "case studies of in-person clients" is not missing anything.
+Also: never report a template placeholder ("0+", "0%", "Lorem ipsum", "Coming soon") as a finding unless the exact string appears verbatim in the TARGET body above. When you do report one, quote it in "detail". Absence of proof that a counter is dynamic is not a finding.
+
 Score each component 0-10 using the bands below, then set eeat_score = round((Experience + Expertise + Authoritativeness + Trustworthiness) x 0.75), capped at 30.
 
 Experience — the most underrated component. Bio length does not count; demonstrated doing counts.

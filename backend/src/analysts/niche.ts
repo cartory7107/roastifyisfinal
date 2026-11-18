@@ -14,7 +14,7 @@ export const NicheResultSchema = z.object({
 /** Used when the LLM fails 3x — competitor hunt degrades but never breaks. */
 export const NICHE_FALLBACK: Niche = {
   category: "unknown",
-  location: "Bangladesh",
+  location: "not detectable",
   keywords: ["services", "products", "company"],
 };
 

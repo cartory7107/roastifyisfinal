@@ -79,8 +79,17 @@ export type Finding = {
   evidence?: Record<string, unknown>;
 };
 
+export type MeasurementStatus = "measured" | "unavailable";
+
 export type CategoryAnalysis = {
   score: number;
+  /**
+   * "unavailable" when an external check (API, Lighthouse, vision model) could
+   * not run: the score is a neutral placeholder only and is EXCLUDED from the
+   * overall score. Absent = fully measured.
+   */
+  measurement?: MeasurementStatus;
+  measurement_reason?: string | null;
   findings: Finding[];
   summary: string;
   metrics: Record<string, unknown>;

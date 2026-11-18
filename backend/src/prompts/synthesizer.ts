@@ -49,7 +49,7 @@ Everything below was measured. You are not re-scoring anything. Do not reference
 
 INPUT:
 URL: ${input.url}
-Niche: ${input.niche.category} in ${input.niche.location}
+Niche: ${input.niche.category}${input.niche.location.toLowerCase() === "not detectable" ? "" : ` — ${input.niche.location}`}
 Scores:
   Overall: ${input.overall}/100 (${input.grade})
   Technical: ${input.categoryScores.technical.score}
@@ -78,6 +78,10 @@ WHAT IT MUST NOT DO
 - Do not list the category scores back at the reader. The table is already on the page.
 - Do not cite anything this audit does not measure: keyword volumes, traffic estimates, backlink counts, ranking positions, revenue. You do not have them.
 - Do not soften. A 34/100 is a site that is not ranking. Write it as that.
+- If a category's findings say it was not measured ("temporarily unavailable", "API runner limit", "could not be measured"), treat that check as unknown: never present its placeholder score as the site's condition, and never infer a weakness from it. Name the check as unavailable in one plain clause if it matters, and move on.
+
+CONTEXT RULE
+Anchor every claim to this exact business model and audience. The niche line below is derived from the site's own content: a SaaS tool, store, media site or creator brand must not be judged with local-service-agency or brick-and-mortar templates (no "local directories", no "walk-in customers", no "city pages") unless the model is genuinely local offline.
 
 TOP PRIORITIES
 Exactly 3. Take them from the top of the impact list, in the order shown. You may merge two adjacent rows that one fix would clear, then take the next row down. You may never promote a row you skipped and you may never reorder the list on a hunch.

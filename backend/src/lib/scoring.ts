@@ -3,7 +3,9 @@
  * Analysts collect facts; this module turns facts into deterministic numbers.
  */
 
-import type { Grade } from "@rostify/shared";
+import type { Grade, MeasurementStatus } from "@rostify/shared";
+
+import { z } from "zod";
 
 export function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
@@ -279,15 +281,47 @@ export const OVERALL_WEIGHTS = {
   ai_readiness: 0.15,
 } as const;
 
-export type OverallScoreInput = Record<keyof typeof OVERALL_WEIGHTS, number>;
+export type OverallWeights = typeof OVERALL_WEIGHTS;
+export type OverallCategoryKey = keyof OverallWeights;
 
-/** Weighted sum of the six category scores (spec §9.7). */
+/** What one category feeds into the overall: a number, or a possibly unmeasured analysis. */
+export type OverallCategoryInput =
+  | number
+  | {
+      score: number;
+      measurement?: MeasurementStatus;
+    };
+
+export type OverallScoreInput = Record<OverallCategoryKey, OverallCategoryInput>;
+
+function categoryValue(entry: OverallCategoryInput): {
+  score: number;
+  measured: boolean;
+} {
+  if (typeof entry === "number") return { score: entry, measured: true };
+  return { score: entry.score, measured: entry.measurement !== "unavailable" };
+}
+
+/**
+ * Weighted mean of the six category scores (spec §9.7), renormalized when a
+ * category could not be measured. A failed external check (OpenPageRank,
+ * Lighthouse, vision model) must never drag the overall down: its weight is
+ * redistributed across the categories that did produce real data. A
+ * placeholder score therefore never reads as a definitive penalty.
+ */
 export function overallScore(scores: OverallScoreInput): number {
   let sum = 0;
-  for (const [key, weight] of Object.entries(OVERALL_WEIGHTS)) {
-    sum += scores[key as keyof OverallScoreInput] * weight;
+  let weight = 0;
+  for (const [key, weightValue] of Object.entries(OVERALL_WEIGHTS)) {
+    const { score, measured } = categoryValue(
+      scores[key as OverallCategoryKey],
+    );
+    if (!measured) continue;
+    sum += score * weightValue;
+    weight += weightValue;
   }
-  return Math.round(clamp(sum, 0, 100));
+  if (weight === 0) return 0;
+  return Math.round(clamp(sum / weight, 0, 100));
 }
 
 /** Letter grade from the overall score (spec §9.8). */
