@@ -2,6 +2,9 @@
 
 এই ফাইলটা ফলো করলে পুরো প্রোডাক্ট — **frontend + API + PocketBase + Cloudflare Tunnel** — একটা ফ্রি সার্ভারে চলবে, আর `main`-এ push করলেই GitHub Actions নিজে থেকে নতুন কোড ডিপ্লয় করবে। তোমার PC চালু রাখতে হবে না।
 
+> **Google Cloud-এ করতে চাইলে:** [`gcp/README.md`](gcp/README.md) — একই স্ট্যাক,
+> শুধু VM তৈরির ধাপ GCP-নির্দিষ্ট (e2-medium, startup script, X64 runner)।
+
 ```
 তোমার PC ──git push──▶ GitHub
                           │  (self-hosted runner)

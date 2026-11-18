@@ -210,6 +210,10 @@ push করলেই GitHub Actions নিজে থেকে ডিপ্লয
 [`deploy/huggingface/README.md`](deploy/huggingface/README.md) — web + API +
 PocketBase একসাথে পোর্ট 7860-এ, reverse proxy দিয়ে `/svc` আর `/api` রাউটিং।
 
+**Google Cloud VM (Free Trial, PC ছাড়া):**
+[`deploy/gcp/README.md`](deploy/gcp/README.md) — e2-medium VM, startup script,
+self-hosted runner; একই `docker-compose.prod.yml` স্ট্যাক।
+
 Manual/self-hosted path: **`DEPLOY.md`** has the full walkthrough
 (`cp .env.example .env`, `docker compose up -d --build`). In short:
 
