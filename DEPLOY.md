@@ -27,7 +27,9 @@ refuses to boot without PocketBase:
 | Key | Value |
 | --- | --- |
 | `POCKETBASE_ADMIN_EMAIL` / `POCKETBASE_ADMIN_PASSWORD` | the PocketBase superuser you create in step 3 |
-| `GROQ_API_KEY` | AI analysis, niche, content + vision review |
+| `LLM_PROVIDER` | `auto` (Ollama Cloud first, Groq fallback), `ollama`, or `groq` |
+| `OLLAMA_API_KEY` | AI analysis, niche, content + vision review (https://ollama.com/settings/keys) |
+| `GROQ_API_KEY` | fallback provider for the same analyses (free tier) |
 | `SERPER_API_KEY` | competitor discovery, search intent |
 | `CORS_ORIGINS` | `https://your-domain` (comma-separated if several) |
 | `POCKETBASE_PUBLIC_URL` | `https://pb.your-domain` — **browser-facing**, used for screenshots/PDF links |

@@ -13,7 +13,7 @@ plus a PDF.
 | Backend    | Fastify 4 + TypeScript (ESM), Zod-validated config                  |
 | Database   | PocketBase 0.40 (SQLite + file storage, single binary)              |
 | Crawling   | Playwright (Chromium) + Lighthouse                                  |
-| Analysis   | Groq (`qwen/qwen3.8-27b`) via the OpenAI-compatible API; Serper for SERP; Open PageRank for DA |
+| Analysis   | Ollama Cloud (`gemma4:31b`) with Groq (`qwen/qwen3.8-27b`) fallback, both via the OpenAI-compatible API; Serper for SERP; Open PageRank for DA |
 | Monorepo   | pnpm workspaces (`frontend`, `backend`, `packages/shared`)          |
 
 ## Repository layout
@@ -64,8 +64,9 @@ cp .env.example backend/.env
 ```
 
 Set `POCKETBASE_ADMIN_PASSWORD` to the password you chose above. The optional
-`GROQ_API_KEY`, `SERPER_API_KEY`, `OPENPAGERANK_API_KEY` and `SEODATA_API_KEY` unlock the
-corresponding analyses — without them those stages degrade instead of failing.
+`OLLAMA_API_KEY`, `GROQ_API_KEY`, `SERPER_API_KEY`, `OPENPAGERANK_API_KEY` and
+`SEODATA_API_KEY` unlock the corresponding analyses — without them those stages
+degrade instead of failing.
 
 ### 3. Create the `audits` collection
 
@@ -96,9 +97,13 @@ pnpm dev        # API on :4000, web on :3000
 | `POCKETBASE_ADMIN_PASSWORD`| yes      | –                       | Superuser password                                           |
 | `WEB_BASE_URL`             | no       | –                       | Used for PDF rendering and as the default CORS origin        |
 | `CORS_ORIGINS`             | no       | `WEB_BASE_URL`          | Comma-separated allowlist, overrides `WEB_BASE_URL`          |
-| `GROQ_API_KEY`             | no       | –                       | Enables LLM analyses                                         |
+| `LLM_PROVIDER`             | no       | `auto`                  | `auto` = Ollama Cloud then Groq, or pin `ollama` / `groq`    |
+| `OLLAMA_API_KEY`           | no       | –                       | Enables LLM analyses on Ollama Cloud (paid per token)        |
+| `OLLAMA_BASE_URL`          | no       | `https://ollama.com/v1` | OpenAI-compatible endpoint                                   |
+| `OLLAMA_MODEL`             | no       | `gemma4:31b`            | Cloud model; must be multimodal for the screenshot review     |
+| `GROQ_API_KEY`             | no       | –                       | Enables LLM analyses / acts as fallback                      |
 | `GROQ_MODEL`               | no       | `qwen/qwen3.8-27b`      | Groq model (must be multimodal for the screenshot review)    |
-| `LLM_TOKENS_PER_MINUTE`    | no       | `8000`                  | Token budget per minute; free tier is 8K                     |
+| `LLM_TOKENS_PER_MINUTE`    | no       | `8000`                  | Groq free-tier token budget per minute (Groq only)            |
 | `SERPER_API_KEY`           | no       | –                       | Enables competitor/SERP analysis                             |
 | `OPENPAGERANK_API_KEY`     | no       | –                       | Enables Domain Authority lookups                             |
 | `SEODATA_API_KEY`          | no       | –                       | Keyword volume/CPC/competition; anonymous works (20/day)     |
@@ -115,6 +120,7 @@ pnpm dev        # API on :4000, web on :3000
 
 | Key | Where | Without it |
 | --- | ----- | ---------- |
+| `OLLAMA_API_KEY` | https://ollama.com/settings/keys → *Create key* (pay per token) | Falls back to Groq when set; otherwise AI readiness, niche and the summary are skipped |
 | `GROQ_API_KEY` | https://console.groq.com/keys → *Create API key* (free) | AI readiness, niche and the written summary are skipped |
 | `SERPER_API_KEY` | https://serper.dev → sign up → dashboard | Competitor discovery and SERP intent are skipped |
 | `OPENPAGERANK_API_KEY` | https://openpagerank.com → free signup → dashboard | Off-page score is skipped |

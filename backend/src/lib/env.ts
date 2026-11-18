@@ -29,9 +29,18 @@ const EnvSchema = z.object({
   WEB_BASE_URL: optionalUrl,
   CORS_ORIGINS: optionalString,
 
+  /** `auto` prefers Ollama Cloud when its key is set, then falls back to Groq. */
+  LLM_PROVIDER: z.enum(["auto", "groq", "ollama"]).default("auto"),
+  OLLAMA_API_KEY: optionalString,
+  OLLAMA_BASE_URL: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().url().default("https://ollama.com/v1"),
+  ),
+  /** Cloud model id from https://ollama.com/api/tags, e.g. `gemma4:31b`. */
+  OLLAMA_MODEL: optionalString,
   GROQ_API_KEY: optionalString,
   GROQ_MODEL: optionalString,
-  /** Free-tier Groq allows 8K tokens per minute; raise it on a paid plan. */
+  /** Only applies to Groq's free tier (8K tokens/minute); raise it on a paid plan. */
   LLM_TOKENS_PER_MINUTE: z.coerce.number().int().min(1_000).default(8_000),
 
   SERPER_API_KEY: optionalString,
@@ -138,7 +147,15 @@ export function assertBootConfig(log: (message: string) => void): void {
     log(`[config] ${message}`);
   }
 
-  for (const key of ["GROQ_API_KEY", "SERPER_API_KEY", "OPENPAGERANK_API_KEY"] as const) {
+  if (env.LLM_PROVIDER === "auto"
+    ? env.OLLAMA_API_KEY === undefined && env.GROQ_API_KEY === undefined
+    : env[env.LLM_PROVIDER === "ollama" ? "OLLAMA_API_KEY" : "GROQ_API_KEY"] === undefined) {
+    log(
+      "[config] No LLM API key is set — set OLLAMA_API_KEY and/or GROQ_API_KEY, otherwise AI analyses will degrade gracefully.",
+    );
+  }
+
+  for (const key of ["SERPER_API_KEY", "OPENPAGERANK_API_KEY"] as const) {
     if (env[key] === undefined) {
       log(`[config] ${key} is not set — related analyses will degrade gracefully.`);
     }
