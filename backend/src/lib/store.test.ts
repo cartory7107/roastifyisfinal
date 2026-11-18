@@ -176,6 +176,30 @@ describe("updateAudit", () => {
     ]);
   });
 
+  it("stores only a preview of large robots/sitemap text", async () => {
+    const id = await insertAudit("https://example.com");
+    const sitemap = "<url>".repeat(400_000);
+
+    await updateAudit(id, {
+      crawl_data: {
+        target: {
+          finalUrl: "https://example.com",
+          title: "Example",
+          robotsTxt: "User-agent: *",
+          sitemapXml: sitemap,
+        },
+        competitors: [],
+      } as never,
+    });
+
+    const stored = h.state.records.get(id)?.payload?.crawl_data as {
+      target: { sitemapXml: string; robotsTxt: string; title: string };
+    };
+    expect(stored.target.sitemapXml).toHaveLength(4_096);
+    expect(stored.target.robotsTxt).toBe("User-agent: *");
+    expect(stored.target.title).toBe("Example");
+  });
+
   it("is a no-op for an empty patch", async () => {
     const id = await insertAudit("https://example.com");
     const before = h.state.updateCalls.length;

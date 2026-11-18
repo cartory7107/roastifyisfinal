@@ -14,6 +14,13 @@ type Field = Record<string, unknown>;
 
 const COLLECTION = "audits";
 
+/**
+ * PocketBase's JSON field defaults to a 1 MB cap, and a single sitemap can be
+ * larger than that. 10 MB leaves room for every analysis plus the crawl data;
+ * `store.ts` additionally previews robots/sitemap text before persisting.
+ */
+const PAYLOAD_MAX_SIZE = 10 * 1024 * 1024;
+
 const FIELDS: Field[] = [
   {
     name: "target_url",
@@ -32,7 +39,7 @@ const FIELDS: Field[] = [
     min: 0,
     pattern: "",
   },
-  { name: "payload", type: "json", required: false, maxSize: 0 },
+  { name: "payload", type: "json", required: false, maxSize: PAYLOAD_MAX_SIZE },
   { name: "pdf_url", type: "text", required: false, max: 0, min: 0, pattern: "" },
   {
     name: "error_message",
@@ -92,6 +99,42 @@ async function request(
   return { status: response.status, json };
 }
 
+/**
+ * Older installs were created with PocketBase's default 1 MB JSON cap, which is
+ * too small once a competitor ships a large sitemap. Raise it in place without
+ * touching any records.
+ */
+async function ensurePayloadCapacity(
+  baseUrl: string,
+  token: string,
+  collection: unknown,
+): Promise<void> {
+  const fields = (collection as { fields?: Field[] }).fields;
+  if (!Array.isArray(fields)) return;
+
+  const payload = fields.find((field) => field.name === "payload");
+  if (payload === undefined) return;
+  if (Number(payload.maxSize ?? 0) >= PAYLOAD_MAX_SIZE) return;
+
+  const updated = fields.map((field) =>
+    field.name === "payload" ? { ...field, maxSize: PAYLOAD_MAX_SIZE } : field,
+  );
+  const response = await request(`${baseUrl}/api/collections/${COLLECTION}`, {
+    method: "PATCH",
+    token,
+    body: { fields: updated },
+  });
+
+  if (response.status !== 200) {
+    throw new Error(
+      `Failed to raise "${COLLECTION}.payload" maxSize (${response.status}): ${JSON.stringify(response.json)}`,
+    );
+  }
+  console.log(
+    `Raised "${COLLECTION}.payload" maxSize to ${PAYLOAD_MAX_SIZE} bytes.`,
+  );
+}
+
 async function main(): Promise<void> {
   const baseUrl = requireEnv("POCKETBASE_URL").replace(/\/+$/, "");
   const identity = requireEnv("POCKETBASE_ADMIN_EMAIL");
@@ -114,7 +157,8 @@ async function main(): Promise<void> {
     token,
   });
   if (existing.status === 200) {
-    console.log(`Collection "${COLLECTION}" already exists - nothing to do.`);
+    await ensurePayloadCapacity(baseUrl, token, existing.json);
+    console.log(`Collection "${COLLECTION}" already exists - schema checked.`);
     return;
   }
   if (existing.status !== 404) {

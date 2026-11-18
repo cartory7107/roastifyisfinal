@@ -4,20 +4,24 @@ import { env } from "./env.js";
 import { sleep, withRetry } from "./retry.js";
 
 /**
- * Both supported providers speak the OpenAI chat-completions dialect, so one
+ * All supported providers speak the OpenAI chat-completions dialect, so one
  * request builder serves them:
  *
+ * - Gemini — free tier (`gemini-4-hydrogen`): frontier multimodal, 1M context.
  * - Ollama Cloud — pay per token, larger multimodal models (`glm-5.3-flash`).
  * - Groq — free tier with an 8K tokens/minute budget (`qwen/qwen3.8-27b`).
  *
- * `LLM_PROVIDER=auto` (the default) prefers Ollama Cloud when its key is set
- * and keeps Groq as a fallback, so one provider's outage or rate limit does not
- * fail the whole audit.
+ * `LLM_PROVIDER=auto` (the default) prefers the free Gemini tier, then Ollama
+ * Cloud, then Groq, so one provider's outage or rate limit does not fail the
+ * whole audit.
  */
-export type LlmProvider = "ollama" | "groq";
+export type LlmProvider = "gemini" | "ollama" | "groq";
 
 const GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions";
 const DEFAULT_GROQ_MODEL = "qwen/qwen3.8-27b";
+const DEFAULT_GEMINI_BASE_URL =
+  "https://generativelanguage.googleapis.com/v1beta/openai";
+const DEFAULT_GEMINI_MODEL = "gemini-4-hydrogen";
 const DEFAULT_OLLAMA_BASE_URL = "https://ollama.com/v1";
 const DEFAULT_OLLAMA_MODEL = "glm-5.3-flash";
 
@@ -40,9 +44,11 @@ type ProviderConfig = {
   endpoint: string;
   apiKey: string;
   model: string;
-  /** Groq wants `max_completion_tokens`; Ollama's OpenAI layer takes `max_tokens`. */
+  /** Groq wants `max_completion_tokens`; the others take `max_tokens`. */
   maxTokensField: "max_tokens" | "max_completion_tokens";
-  /** Groq's free tier needs client-side pacing; Ollama bills per token. */
+  /** Gemini 3/4 cannot disable thinking, so ask for the cheapest level. */
+  reasoningEffort: "none" | "low";
+  /** Groq's free tier needs client-side pacing; the others bill per token. */
   paceTokens: boolean;
 };
 
@@ -78,7 +84,7 @@ function envValue(name: string): string | undefined {
 
 function requestedProvider(): "auto" | LlmProvider {
   const raw = envValue("LLM_PROVIDER")?.toLowerCase();
-  return raw === "ollama" || raw === "groq" ? raw : "auto";
+  return raw === "gemini" || raw === "ollama" || raw === "groq" ? raw : "auto";
 }
 
 function ollamaEndpoint(): string {
@@ -86,8 +92,28 @@ function ollamaEndpoint(): string {
   return `${base.replace(/\/+$/, "")}/chat/completions`;
 }
 
+function geminiEndpoint(): string {
+  const base = envValue("GEMINI_BASE_URL") ?? DEFAULT_GEMINI_BASE_URL;
+  return `${base.replace(/\/+$/, "")}/chat/completions`;
+}
+
 /** Resolve one provider's settings, or `null` when it has no API key. */
 function providerConfig(id: LlmProvider): ProviderConfig | null {
+  if (id === "gemini") {
+    const apiKey = envValue("GEMINI_API_KEY");
+    if (apiKey === undefined) return null;
+    return {
+      id,
+      label: "Gemini",
+      endpoint: geminiEndpoint(),
+      apiKey,
+      model: envValue("GEMINI_MODEL") ?? DEFAULT_GEMINI_MODEL,
+      maxTokensField: "max_tokens",
+      reasoningEffort: "low",
+      paceTokens: false,
+    };
+  }
+
   if (id === "ollama") {
     const apiKey = envValue("OLLAMA_API_KEY");
     if (apiKey === undefined) return null;
@@ -98,6 +124,7 @@ function providerConfig(id: LlmProvider): ProviderConfig | null {
       apiKey,
       model: envValue("OLLAMA_MODEL") ?? DEFAULT_OLLAMA_MODEL,
       maxTokensField: "max_tokens",
+      reasoningEffort: "none",
       paceTokens: false,
     };
   }
@@ -111,30 +138,32 @@ function providerConfig(id: LlmProvider): ProviderConfig | null {
     apiKey,
     model: envValue("GROQ_MODEL") ?? DEFAULT_GROQ_MODEL,
     maxTokensField: "max_completion_tokens",
+    reasoningEffort: "none",
     paceTokens: true,
   };
 }
 
 /**
- * Providers to try, in order. `auto` puts Ollama Cloud first because it has no
- * per-minute token cap, and keeps Groq as the free fallback.
+ * Providers to try, in order. `auto` runs the free tiers first (Gemini, then
+ * Groq's fallback) and keeps the paid Ollama Cloud last, so an account without
+ * credits never slows an audit down.
  */
 export function configuredProviders(): LlmProvider[] {
   const requested = requestedProvider();
   if (requested !== "auto") {
     return providerConfig(requested) === null ? [] : [requested];
   }
-  return (["ollama", "groq"] as const).filter(
+  return (["gemini", "ollama", "groq"] as const).filter(
     (id) => providerConfig(id) !== null,
   );
 }
 
 /** The provider `generateJson` will try first, even if no key is set yet. */
 function primaryProvider(): LlmProvider {
-  return (
-    configuredProviders()[0] ??
-    (requestedProvider() === "ollama" ? "ollama" : "groq")
-  );
+  const configured = configuredProviders()[0];
+  if (configured !== undefined) return configured;
+  const requested = requestedProvider();
+  return requested === "auto" ? "gemini" : requested;
 }
 
 export function isLlmConfigured(): boolean {
@@ -142,9 +171,12 @@ export function isLlmConfigured(): boolean {
 }
 
 export function llmModelName(): string {
-  const config = providerConfig(primaryProvider());
+  const primary = primaryProvider();
+  const config = providerConfig(primary);
   if (config !== null) return config.model;
-  return primaryProvider() === "ollama" ? DEFAULT_OLLAMA_MODEL : DEFAULT_GROQ_MODEL;
+  if (primary === "gemini") return DEFAULT_GEMINI_MODEL;
+  if (primary === "ollama") return DEFAULT_OLLAMA_MODEL;
+  return DEFAULT_GROQ_MODEL;
 }
 
 /** One image part for a multimodal request (spec §8.9). */
@@ -239,6 +271,12 @@ type ChatCompletionResponse = {
   usage?: { total_tokens?: number };
 };
 
+function apiKeyEnvName(id: LlmProvider): string {
+  if (id === "gemini") return "GEMINI_API_KEY";
+  if (id === "ollama") return "OLLAMA_API_KEY";
+  return "GROQ_API_KEY";
+}
+
 async function requestJson(
   provider: LlmProvider,
   prompt: string,
@@ -248,7 +286,7 @@ async function requestJson(
   if (config === null) {
     throw new LlmError(
       "missing_api_key",
-      `${provider === "ollama" ? "OLLAMA_API_KEY" : "GROQ_API_KEY"} is not set`,
+      `${apiKeyEnvName(provider)} is not set`,
     );
   }
 
@@ -263,8 +301,8 @@ async function requestJson(
     messages: [{ role: "user", content: buildContent(prompt, images) }],
     response_format: { type: "json_object" },
     // Instruct mode: JSON extraction does not need chain-of-thought, and
-    // thinking tokens eat Groq's minute budget and Ollama's paid output.
-    reasoning_effort: "none",
+    // thinking tokens eat Groq's minute budget and paid output tokens.
+    reasoning_effort: config.reasoningEffort,
     temperature: 0.2,
     [config.maxTokensField]: 4_096,
   };
@@ -367,6 +405,8 @@ function stripCodeFence(text: string): string {
 
 function missingKeyError(): LlmError {
   switch (requestedProvider()) {
+    case "gemini":
+      return new LlmError("missing_api_key", "GEMINI_API_KEY is not set");
     case "ollama":
       return new LlmError("missing_api_key", "OLLAMA_API_KEY is not set");
     case "groq":
@@ -374,7 +414,7 @@ function missingKeyError(): LlmError {
     default:
       return new LlmError(
         "missing_api_key",
-        "No LLM provider configured: set OLLAMA_API_KEY or GROQ_API_KEY",
+        "No LLM provider configured: set GEMINI_API_KEY, OLLAMA_API_KEY or GROQ_API_KEY",
       );
   }
 }

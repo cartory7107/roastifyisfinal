@@ -27,7 +27,8 @@ refuses to boot without PocketBase:
 | Key | Value |
 | --- | --- |
 | `POCKETBASE_ADMIN_EMAIL` / `POCKETBASE_ADMIN_PASSWORD` | the PocketBase superuser you create in step 3 |
-| `LLM_PROVIDER` | `auto` (Ollama Cloud first, Groq fallback), `ollama`, or `groq` |
+| `LLM_PROVIDER` | `auto` (Gemini free first, then Ollama, then Groq), `gemini`, `ollama`, or `groq` |
+| `GEMINI_API_KEY` | AI analysis, niche, content + vision review (free: https://aistudio.google.com/apikey) |
 | `OLLAMA_API_KEY` | AI analysis, niche, content + vision review (https://ollama.com/settings/keys) |
 | `GROQ_API_KEY` | fallback provider for the same analyses (free tier) |
 | `SERPER_API_KEY` | competitor discovery, search intent |
@@ -55,7 +56,8 @@ docker compose up -d --build
 docker compose ps            # all three healthy
 ```
 
-Create the `audits` collection (idempotent):
+Create the `audits` collection (idempotent; also raises the `payload` JSON cap
+to 10 MB on an existing install, which a large competitor sitemap needs):
 
 ```bash
 docker compose exec api pnpm --filter backend setup:pb

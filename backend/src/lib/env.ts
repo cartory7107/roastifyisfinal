@@ -29,8 +29,15 @@ const EnvSchema = z.object({
   WEB_BASE_URL: optionalUrl,
   CORS_ORIGINS: optionalString,
 
-  /** `auto` prefers Ollama Cloud when its key is set, then falls back to Groq. */
-  LLM_PROVIDER: z.enum(["auto", "groq", "ollama"]).default("auto"),
+  /** `auto` prefers Gemini's free tier when its key is set, then Ollama, then Groq. */
+  LLM_PROVIDER: z.enum(["auto", "gemini", "groq", "ollama"]).default("auto"),
+  GEMINI_API_KEY: optionalString,
+  GEMINI_BASE_URL: z.preprocess(
+    (value) => (value === "" ? undefined : value),
+    z.string().url().default("https://generativelanguage.googleapis.com/v1beta/openai"),
+  ),
+  /** Free-tier model id, e.g. `gemini-4-hydrogen` or `gemini-3.8-flash`. */
+  GEMINI_MODEL: optionalString,
   OLLAMA_API_KEY: optionalString,
   OLLAMA_BASE_URL: z.preprocess(
     (value) => (value === "" ? undefined : value),
@@ -147,11 +154,23 @@ export function assertBootConfig(log: (message: string) => void): void {
     log(`[config] ${message}`);
   }
 
-  if (env.LLM_PROVIDER === "auto"
-    ? env.OLLAMA_API_KEY === undefined && env.GROQ_API_KEY === undefined
-    : env[env.LLM_PROVIDER === "ollama" ? "OLLAMA_API_KEY" : "GROQ_API_KEY"] === undefined) {
+  const llmKeyFor = {
+    auto: undefined,
+    gemini: env.GEMINI_API_KEY,
+    ollama: env.OLLAMA_API_KEY,
+    groq: env.GROQ_API_KEY,
+  } as const;
+
+  const hasLlmKey =
+    env.LLM_PROVIDER === "auto"
+      ? env.GEMINI_API_KEY !== undefined ||
+        env.OLLAMA_API_KEY !== undefined ||
+        env.GROQ_API_KEY !== undefined
+      : llmKeyFor[env.LLM_PROVIDER] !== undefined;
+
+  if (!hasLlmKey) {
     log(
-      "[config] No LLM API key is set — set OLLAMA_API_KEY and/or GROQ_API_KEY, otherwise AI analyses will degrade gracefully.",
+      "[config] No LLM API key is set — set GEMINI_API_KEY (free), OLLAMA_API_KEY and/or GROQ_API_KEY, otherwise AI analyses will degrade gracefully.",
     );
   }
 

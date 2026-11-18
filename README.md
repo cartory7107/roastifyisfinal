@@ -13,7 +13,7 @@ plus a PDF.
 | Backend    | Fastify 4 + TypeScript (ESM), Zod-validated config                  |
 | Database   | PocketBase 0.40 (SQLite + file storage, single binary)              |
 | Crawling   | Playwright (Chromium) + Lighthouse                                  |
-| Analysis   | Ollama Cloud (`glm-5.3-flash`) with Groq (`qwen/qwen3.8-27b`) fallback, both via the OpenAI-compatible API; Serper for SERP; Open PageRank for DA |
+| Analysis   | Gemini free tier (`gemini-4-hydrogen`) via the OpenAI-compatible API, with Ollama Cloud (`glm-5.3-flash`) and Groq (`qwen/qwen3.8-27b`) fallbacks; Serper for SERP; Open PageRank for DA |
 | Monorepo   | pnpm workspaces (`frontend`, `backend`, `packages/shared`)          |
 
 ## Repository layout
@@ -64,9 +64,9 @@ cp .env.example backend/.env
 ```
 
 Set `POCKETBASE_ADMIN_PASSWORD` to the password you chose above. The optional
-`OLLAMA_API_KEY`, `GROQ_API_KEY`, `SERPER_API_KEY`, `OPENPAGERANK_API_KEY` and
-`SEODATA_API_KEY` unlock the corresponding analyses — without them those stages
-degrade instead of failing.
+`GEMINI_API_KEY` (free), `OLLAMA_API_KEY`, `GROQ_API_KEY`, `SERPER_API_KEY`,
+`OPENPAGERANK_API_KEY` and `SEODATA_API_KEY` unlock the corresponding analyses —
+without them those stages degrade instead of failing.
 
 ### 3. Create the `audits` collection
 
@@ -97,8 +97,11 @@ pnpm dev        # API on :4000, web on :3000
 | `POCKETBASE_ADMIN_PASSWORD`| yes      | –                       | Superuser password                                           |
 | `WEB_BASE_URL`             | no       | –                       | Used for PDF rendering and as the default CORS origin        |
 | `CORS_ORIGINS`             | no       | `WEB_BASE_URL`          | Comma-separated allowlist, overrides `WEB_BASE_URL`          |
-| `LLM_PROVIDER`             | no       | `auto`                  | `auto` = Ollama Cloud then Groq, or pin `ollama` / `groq`    |
-| `OLLAMA_API_KEY`           | no       | –                       | Enables LLM analyses on Ollama Cloud (paid per token)        |
+| `LLM_PROVIDER`             | no       | `auto`                  | `auto` = Gemini → Ollama → Groq, or pin one provider          |
+| `GEMINI_API_KEY`           | no       | –                       | Enables LLM analyses on the free Gemini tier                 |
+| `GEMINI_BASE_URL`          | no       | `…/v1beta/openai`       | OpenAI-compatible endpoint                                   |
+| `GEMINI_MODEL`             | no       | `gemini-4-hydrogen`     | Free-tier model; must be multimodal for the screenshot review |
+| `OLLAMA_API_KEY`           | no       | –                       | Paid fallback provider (per token)                           |
 | `OLLAMA_BASE_URL`          | no       | `https://ollama.com/v1` | OpenAI-compatible endpoint                                   |
 | `OLLAMA_MODEL`             | no       | `glm-5.3-flash`         | Cloud model; must be multimodal for the screenshot review     |
 | `GROQ_API_KEY`             | no       | –                       | Enables LLM analyses / acts as fallback                      |
@@ -120,7 +123,8 @@ pnpm dev        # API on :4000, web on :3000
 
 | Key | Where | Without it |
 | --- | ----- | ---------- |
-| `OLLAMA_API_KEY` | https://ollama.com/settings/keys → *Create key* (pay per token) | Falls back to Groq when set; otherwise AI readiness, niche and the summary are skipped |
+| `GEMINI_API_KEY` | https://aistudio.google.com/apikey → *Create API key* (free) | Falls back to the next provider; without any LLM key, AI readiness, niche and the summary are skipped |
+| `OLLAMA_API_KEY` | https://ollama.com/settings/keys → *Create key* (pay per token) | Falls back to Groq |
 | `GROQ_API_KEY` | https://console.groq.com/keys → *Create API key* (free) | AI readiness, niche and the written summary are skipped |
 | `SERPER_API_KEY` | https://serper.dev → sign up → dashboard | Competitor discovery and SERP intent are skipped |
 | `OPENPAGERANK_API_KEY` | https://openpagerank.com → free signup → dashboard | Off-page score is skipped |
@@ -138,7 +142,7 @@ Paste each key into `backend/.env` and restart the API. Missing keys only warn a
 | `pnpm lint`                        | ESLint (backend) + `next lint` (frontend)             |
 | `pnpm test`                        | Vitest across `backend` and `packages/shared`         |
 | `pnpm build`                       | Compile the API, build the Next.js app                |
-| `pnpm --filter backend setup:pb`   | Create the `audits` collection                        |
+| `pnpm --filter backend setup:pb`   | Create the `audits` collection (and raise its JSON size cap) |
 | `pnpm --filter backend test:audit` | Run a full audit against `POCKETBASE_URL`             |
 
 ## API

@@ -96,7 +96,7 @@ function unavailable(
       "Temporarily Unavailable due to API Runner Limit: the screenshot comparison did not run, so no UI/UX verdict is issued. " +
       `The neutral score of ${NEUTRAL_SCORE} below is excluded from the overall score. Cause: ${reason}`,
     recommendation:
-      "Re-run the audit; verify the LLM API keys (OLLAMA_API_KEY / GROQ_API_KEY) and the provider rate limit, and that screenshots uploaded successfully.",
+      "Re-run the audit; verify the LLM API key (GEMINI_API_KEY / OLLAMA_API_KEY / GROQ_API_KEY) and the provider rate limit, and that screenshots uploaded successfully.",
     evidence: { reason, measurement: "unavailable" },
   };
 

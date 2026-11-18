@@ -5,6 +5,7 @@ import type {
   CategoryAnalysis,
   Competitor,
   CrawlBundle,
+  CrawlData,
   FinalReport,
   KeywordResearch,
   Niche,
@@ -70,6 +71,27 @@ type AuditRecord = {
 
 function orNull(value: string | undefined | null): string | null {
   return value === undefined || value === null || value === "" ? null : value;
+}
+
+/**
+ * PocketBase caps a JSON column at 1 MB by default, and sitemaps alone can be
+ * several megabytes. The report only reads the page metadata, so the raw
+ * robots.txt/sitemap.xml text is stored as a short preview instead of the whole
+ * document (the technical analysis keeps its own preview as well).
+ */
+const CRAWL_TEXT_PREVIEW = 4_096;
+
+function trimCrawlText(value: string | null): string | null {
+  return value === null ? null : value.slice(0, CRAWL_TEXT_PREVIEW);
+}
+
+function trimCrawlData(bundle: CrawlBundle): CrawlBundle {
+  const trim = (data: CrawlData): CrawlData => ({
+    ...data,
+    robotsTxt: trimCrawlText(data.robotsTxt),
+    sitemapXml: trimCrawlText(data.sitemapXml),
+  });
+  return { target: trim(bundle.target), competitors: bundle.competitors.map(trim) };
 }
 
 function toIso(value: string | undefined): string {
@@ -197,6 +219,10 @@ export async function updateAudit(id: string, patch: AuditPatch): Promise<void> 
       for (const [key, value] of Object.entries(patch)) {
         if ((SCALAR_KEYS as readonly string[]).includes(key)) {
           fields[key] = value;
+        } else if (key === "crawl_data") {
+          (payloadPatch as Record<string, unknown>)[key] = trimCrawlData(
+            value as CrawlBundle,
+          );
         } else {
           (payloadPatch as Record<string, unknown>)[key] = value;
         }

@@ -34,8 +34,10 @@ describe("configuration helpers", () => {
     vi.stubEnv("GROQ_MODEL", "");
     vi.stubEnv("OLLAMA_API_KEY", "");
     vi.stubEnv("OLLAMA_MODEL", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
+    vi.stubEnv("GEMINI_MODEL", "");
     expect(isLlmConfigured()).toBe(false);
-    expect(llmModelName()).toBe("qwen/qwen3.8-27b");
+    expect(llmModelName()).toBe("gemini-4-hydrogen");
 
     vi.stubEnv("GROQ_API_KEY", "gsk_test");
     vi.stubEnv("GROQ_MODEL", "custom-model");
@@ -43,17 +45,26 @@ describe("configuration helpers", () => {
     expect(llmModelName()).toBe("custom-model");
   });
 
-  it("prefers Ollama in auto mode and honours explicit pins", () => {
+  it("orders free providers first and honours explicit pins", () => {
     vi.stubEnv("LLM_PROVIDER", "");
     vi.stubEnv("GROQ_API_KEY", "gsk_test");
     vi.stubEnv("OLLAMA_API_KEY", "ollama_test");
     vi.stubEnv("OLLAMA_MODEL", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
     expect(configuredProviders()).toEqual(["ollama", "groq"]);
     expect(llmModelName()).toBe("glm-5.3-flash");
+
+    vi.stubEnv("GEMINI_API_KEY", "gemini_test");
+    expect(configuredProviders()).toEqual(["gemini", "ollama", "groq"]);
+    expect(llmModelName()).toBe("gemini-4-hydrogen");
 
     vi.stubEnv("LLM_PROVIDER", "groq");
     expect(configuredProviders()).toEqual(["groq"]);
     expect(llmModelName()).toBe("qwen/qwen3.8-27b");
+
+    vi.stubEnv("LLM_PROVIDER", "gemini");
+    expect(configuredProviders()).toEqual(["gemini"]);
+    expect(llmModelName()).toBe("gemini-4-hydrogen");
 
     vi.stubEnv("LLM_PROVIDER", "ollama");
     vi.stubEnv("OLLAMA_API_KEY", "");
@@ -72,6 +83,7 @@ describe("generateJson", () => {
   it("sends JSON mode without thinking and returns validated data", async () => {
     vi.stubEnv("GROQ_API_KEY", "gsk_test");
     vi.stubEnv("OLLAMA_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
     const fetchMock = vi.fn(async () =>
       chatResponse('{"ok": true, "site": "example.com"}'),
     );
@@ -95,6 +107,7 @@ describe("generateJson", () => {
   it("strips a markdown code fence around the JSON", async () => {
     vi.stubEnv("GROQ_API_KEY", "gsk_test");
     vi.stubEnv("OLLAMA_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => chatResponse('```json\n{"ok": false, "site": "a.io"}\n```')),
@@ -109,6 +122,7 @@ describe("generateJson", () => {
   it("sends screenshots as image parts", async () => {
     vi.stubEnv("GROQ_API_KEY", "gsk_test");
     vi.stubEnv("OLLAMA_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
     const fetchMock = vi.fn(async () => chatResponse('{"ok": true, "site": "a"}'));
     vi.stubGlobal("fetch", fetchMock);
 
@@ -129,6 +143,7 @@ describe("generateJson", () => {
     vi.stubEnv("LLM_PROVIDER", "");
     vi.stubEnv("GROQ_API_KEY", "");
     vi.stubEnv("OLLAMA_API_KEY", "");
+    vi.stubEnv("GEMINI_API_KEY", "");
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
 
@@ -145,6 +160,7 @@ describe("generateJson", () => {
     vi.stubEnv("OLLAMA_MODEL", "");
     vi.stubEnv("OLLAMA_BASE_URL", "https://ollama.example.com/v1/");
     vi.stubEnv("GROQ_API_KEY", "gsk_test");
+    vi.stubEnv("GEMINI_API_KEY", "");
     const fetchMock = vi.fn(async () =>
       chatResponse('{"ok": true, "site": "example.com"}'),
     );
@@ -169,6 +185,41 @@ describe("generateJson", () => {
     expect(body.reasoning_effort).toBe("none");
   });
 
+  it("calls Gemini's free tier with the compatibility endpoint", async () => {
+    vi.stubEnv("LLM_PROVIDER", "");
+    vi.stubEnv("GEMINI_API_KEY", "gemini_test");
+    vi.stubEnv("GEMINI_MODEL", "");
+    vi.stubEnv("GEMINI_BASE_URL", "");
+    vi.stubEnv("OLLAMA_API_KEY", "ollama_test");
+    vi.stubEnv("GROQ_API_KEY", "gsk_test");
+    const fetchMock = vi.fn(async () =>
+      chatResponse('{"ok": true, "site": "gemini.io"}'),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(generateJson("audit this", Schema)).resolves.toEqual({
+      ok: true,
+      site: "gemini.io",
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe(
+      "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+    );
+    expect((init.headers as Record<string, string>).Authorization).toBe(
+      "Bearer gemini_test",
+    );
+
+    const body = JSON.parse(String(init.body)) as Record<string, unknown>;
+    expect(body.model).toBe("gemini-4-hydrogen");
+    expect(body.max_tokens).toBe(4096);
+    expect(body.max_completion_tokens).toBeUndefined();
+    expect(body.response_format).toEqual({ type: "json_object" });
+    // Gemini 3/4 cannot disable thinking, so the cheapest level is requested.
+    expect(body.reasoning_effort).toBe("low");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
   it("respects a pinned provider", async () => {
     vi.stubEnv("LLM_PROVIDER", "groq");
     vi.stubEnv("GROQ_API_KEY", "gsk_test");
@@ -189,6 +240,7 @@ describe("generateJson", () => {
     vi.stubEnv("LLM_PROVIDER", "");
     vi.stubEnv("OLLAMA_API_KEY", "ollama_test");
     vi.stubEnv("GROQ_API_KEY", "gsk_test");
+    vi.stubEnv("GEMINI_API_KEY", "");
     const fetchMock = vi.fn(async (url: string | URL | Request) => {
       if (String(url).includes("ollama.com")) {
         return new Response(JSON.stringify({ error: "invalid api key" }), {

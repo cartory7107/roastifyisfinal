@@ -248,7 +248,7 @@ export async function analyzeContent(
       issue: "Content analysis partially failed — E-E-A-T could not be evaluated",
       detail: `The E-E-A-T review did not run, so up to 30 content points are unearned. Cause: ${llmError}`,
       recommendation:
-        "Re-run the audit; verify the LLM API keys (OLLAMA_API_KEY / GROQ_API_KEY) and the provider rate limit.",
+        "Re-run the audit; verify the LLM API key (GEMINI_API_KEY / OLLAMA_API_KEY / GROQ_API_KEY) and the provider rate limit.",
       evidence: { reason: llmError },
     });
   }
