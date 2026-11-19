@@ -6,6 +6,9 @@ build/
 *.log
 .cache/
 .env
+!.env.example
+!frontend/.env
+!frontend/.env.production
 .env.local
 .env.*.local
 .DS_Store

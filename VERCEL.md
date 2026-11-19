@@ -25,8 +25,8 @@ configure.
 
 ## One-time import (≈ 60 seconds)
 
-1. Open <https://vercel.com/new/import?s=https%3A%2F%2Fgithub.com%2Fcartory7107%2Froastifyrs>
-2. Click **Import** next to `cartory7107/roastifyrs`.
+1. Open <https://vercel.com/new/import?s=https%3A%2F%2Fgithub.com%2Fcartory7107%2Froastifyisfinal>
+2. Click **Import** next to `cartory7107/roastifyisfinal`.
 3. Set **Root Directory** to `frontend` (click **Edit** → `frontend`).
 4. Leave the framework as **Next.js** and every build setting on its default.
 5. Click **Deploy**.
