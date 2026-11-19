@@ -2,49 +2,18 @@ import type {
   AuditRow,
   AuditStatus,
   AuditStep,
-  CategoryAnalysis,
-  Competitor,
   CrawlBundle,
-  CrawlData,
-  FinalReport,
-  KeywordResearch,
-  Niche,
 } from "@rostify/shared";
 
+import type { AuditPatch } from "./audit-patch.js";
+import { trimCrawlData } from "./crawl-trim.js";
+import { hasDatabase } from "./db.js";
 import { AUDITS_COLLECTION, getPocketBase } from "./pb.js";
+import * as pgStore from "./store-postgres.js";
+import { AuditStoreError } from "./store-error.js";
 
-export class AuditStoreError extends Error {
-  constructor(operation: string, cause: unknown) {
-    const detail = cause instanceof Error ? cause.message : String(cause);
-    super(`Audit store ${operation} failed: ${detail}`);
-    this.name = "AuditStoreError";
-    this.cause = cause;
-  }
-}
-
-/**
- * Analysis columns live inside the record's `payload` JSON field; the few
- * columns the pipeline needs to query/filter stay as real fields.
- */
-export type AuditPatch = Partial<{
-  status: AuditStatus;
-  current_step: AuditStep | null;
-  niche: Niche;
-  keyword_research: KeywordResearch;
-  competitors: Competitor[];
-  crawl_data: CrawlBundle;
-  technical_analysis: CategoryAnalysis;
-  onpage_analysis: CategoryAnalysis;
-  content_analysis: CategoryAnalysis;
-  performance_analysis: CategoryAnalysis;
-  offpage_analysis: CategoryAnalysis;
-  ai_readiness_analysis: CategoryAnalysis;
-  uiux_analysis: CategoryAnalysis;
-  final_report: FinalReport;
-  pdf_url: string | null;
-  error_message: string | null;
-  completed_at: string;
-}>;
+export { AuditStoreError } from "./store-error.js";
+export type { AuditPatch } from "./audit-patch.js";
 
 const SCALAR_KEYS = [
   "status",
@@ -71,27 +40,6 @@ type AuditRecord = {
 
 function orNull(value: string | undefined | null): string | null {
   return value === undefined || value === null || value === "" ? null : value;
-}
-
-/**
- * PocketBase caps a JSON column at 1 MB by default, and sitemaps alone can be
- * several megabytes. The report only reads the page metadata, so the raw
- * robots.txt/sitemap.xml text is stored as a short preview instead of the whole
- * document (the technical analysis keeps its own preview as well).
- */
-const CRAWL_TEXT_PREVIEW = 4_096;
-
-function trimCrawlText(value: string | null): string | null {
-  return value === null ? null : value.slice(0, CRAWL_TEXT_PREVIEW);
-}
-
-function trimCrawlData(bundle: CrawlBundle): CrawlBundle {
-  const trim = (data: CrawlData): CrawlData => ({
-    ...data,
-    robotsTxt: trimCrawlText(data.robotsTxt),
-    sitemapXml: trimCrawlText(data.sitemapXml),
-  });
-  return { target: trim(bundle.target), competitors: bundle.competitors.map(trim) };
 }
 
 function toIso(value: string | undefined): string {
@@ -128,6 +76,8 @@ function toAuditRow(record: AuditRecord): AuditRow {
 
 /** Insert a pending audit row and return its id (spec §10 POST /audit). */
 export async function insertAudit(targetUrl: string): Promise<string> {
+  if (hasDatabase) return pgStore.insertAudit(targetUrl);
+
   try {
     const pb = await getPocketBase();
     const record = await pb.collection(AUDITS_COLLECTION).create({
@@ -143,6 +93,8 @@ export async function insertAudit(targetUrl: string): Promise<string> {
 
 /** Fetch one audit row; `null` when the id does not exist. */
 export async function fetchAudit(id: string): Promise<AuditRow | null> {
+  if (hasDatabase) return pgStore.fetchAudit(id);
+
   try {
     const pb = await getPocketBase();
     const record = (await pb.collection(AUDITS_COLLECTION).getOne(id)) as AuditRecord;
@@ -162,6 +114,8 @@ export async function fetchAudit(id: string): Promise<AuditRow | null> {
 export async function failInterruptedAudits(
   reason = "Interrupted by a server restart",
 ): Promise<number> {
+  if (hasDatabase) return pgStore.failInterruptedAudits(reason);
+
   try {
     const pb = await getPocketBase();
     const records = (await pb.collection(AUDITS_COLLECTION).getFullList({
@@ -208,6 +162,7 @@ function enqueueWrite<T>(id: string, task: () => Promise<T>): Promise<T> {
 /** Partial update of the audits row; no-op on an empty patch. */
 export async function updateAudit(id: string, patch: AuditPatch): Promise<void> {
   if (Object.keys(patch).length === 0) return;
+  if (hasDatabase) return pgStore.updateAudit(id, patch);
 
   await enqueueWrite(id, async () => {
     try {

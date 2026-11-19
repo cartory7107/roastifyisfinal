@@ -1,5 +1,8 @@
 # One-host production deploy (PC ছাড়া, push-to-deploy)
 
+> **কার্ড নেই, আর Chromium ছাড়াই চালাতে চাও?** [`serverless/README.md`](serverless/README.md) —
+> Neon Postgres + Render Free + Vercel। কোনো সার্ভার, কার্ড বা Chromium লাগে না।
+
 এই ফাইলটা ফলো করলে পুরো প্রোডাক্ট — **frontend + API + PocketBase + Cloudflare Tunnel** — একটা ফ্রি সার্ভারে চলবে, আর `main`-এ push করলেই GitHub Actions নিজে থেকে নতুন কোড ডিপ্লয় করবে। তোমার PC চালু রাখতে হবে না।
 
 > **Google Cloud-এ করতে চাইলে:** [`gcp/README.md`](gcp/README.md) — একই স্ট্যাক,

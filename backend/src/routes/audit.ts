@@ -2,6 +2,7 @@ import type { AuditPollResponse } from "@rostify/shared";
 import type { FastifyPluginAsync } from "fastify";
 
 import { startAudit } from "../pipeline.js";
+import { hasDatabase } from "../lib/db.js";
 import { env } from "../lib/env.js";
 import { renderReportPdf } from "../lib/pdf.js";
 import { AuditIdParamsSchema, CreateAuditRequestSchema } from "../lib/schemas.js";
@@ -10,7 +11,12 @@ import { fetchAudit, insertAudit, updateAudit } from "../lib/store.js";
 import { assertPublicUrl, BlockedUrlError } from "../lib/url-guard.js";
 
 const NOT_CONFIGURED =
-  "PocketBase is not configured — copy .env.example to .env and fill POCKETBASE_URL / POCKETBASE_ADMIN_EMAIL / POCKETBASE_ADMIN_PASSWORD.";
+  "No audit store is configured — set DATABASE_URL (Postgres/Neon) or the POCKETBASE_* variables.";
+
+/** Postgres (serverless) or PocketBase (self-hosted) can back the API. */
+function storeConfigured(): boolean {
+  return hasDatabase || isPocketBaseConfigured();
+}
 
 /**
  * One in-flight render per audit: a double-click on "Download PDF" should
@@ -28,7 +34,7 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
-      if (!isPocketBaseConfigured()) {
+      if (!storeConfigured()) {
         return reply.code(503).send({ error: NOT_CONFIGURED });
       }
 
@@ -67,7 +73,7 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
   );
 
   app.get("/audit/:id", async (request, reply) => {
-    if (!isPocketBaseConfigured()) {
+    if (!storeConfigured()) {
       return reply.code(503).send({ error: NOT_CONFIGURED });
     }
 
@@ -126,7 +132,7 @@ export const auditRoutes: FastifyPluginAsync = async (app) => {
       },
     },
     async (request, reply) => {
-      if (!isPocketBaseConfigured()) {
+      if (!storeConfigured()) {
         return reply.code(503).send({ error: NOT_CONFIGURED });
       }
 

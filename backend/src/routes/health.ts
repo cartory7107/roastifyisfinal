@@ -1,13 +1,14 @@
 import type { FastifyPluginAsync } from "fastify";
 
+import { getPool, hasDatabase } from "../lib/db.js";
 import { env, hasPocketBaseConfig } from "../lib/env.js";
 
 const PROBE_TIMEOUT_MS = 3_000;
 
 /**
  * `/health` is liveness only (process is up). `/health/ready` also proves the
- * PocketBase dependency answers, so orchestrators don't route traffic to an
- * API that cannot persist audits.
+ * configured store answers, so orchestrators don't route traffic to an API
+ * that cannot persist audits.
  */
 export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get("/health", async () => ({
@@ -18,10 +19,25 @@ export const healthRoutes: FastifyPluginAsync = async (app) => {
   app.get("/health/ready", async (_request, reply) => {
     const timestamp = new Date().toISOString();
 
+    if (hasDatabase) {
+      try {
+        await getPool().query("SELECT 1");
+        return { ok: true, database: "up", timestamp };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        return reply.code(503).send({
+          ok: false,
+          database: "down",
+          error: message,
+          timestamp,
+        });
+      }
+    }
+
     if (!hasPocketBaseConfig) {
       return reply.code(503).send({
         ok: false,
-        pocketbase: "unconfigured",
+        store: "unconfigured",
         timestamp,
       });
     }

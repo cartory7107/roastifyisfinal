@@ -184,10 +184,12 @@ export async function synthesizeReport(input: SynthesizerInput): Promise<FinalRe
         desktop: input.target.screenshotDesktopUrl,
         mobile: input.target.screenshotMobileUrl,
       },
-      competitors: input.competitorPages.map((page) => ({
-        url: page.finalUrl,
-        mobile: page.screenshotMobileUrl,
-      })),
+      competitors: input.competitorPages
+        .filter((page) => page.screenshotMobileUrl !== "")
+        .map((page) => ({
+          url: page.finalUrl,
+          mobile: page.screenshotMobileUrl,
+        })),
     },
     meta: {
       url: input.target.finalUrl,

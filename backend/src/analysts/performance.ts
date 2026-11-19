@@ -1,9 +1,9 @@
 import type { CategoryAnalysis, Finding } from "@rostify/shared";
 
-import {
-  runLighthouse,
-  type LighthouseMetrics,
-} from "../crawler/lighthouse.js";
+import { hasDatabase } from "../lib/db.js";
+import { env } from "../lib/env.js";
+import type { LighthouseMetrics } from "../lib/lighthouse-metrics.js";
+import { psiSnapshot } from "../lib/psi.js";
 import {
   clsScore,
   lcpScore,
@@ -95,7 +95,7 @@ function unavailable(
       "The placeholder score below is excluded from the overall score. Cause: " +
       reason,
     recommendation:
-      "Verify the site is publicly reachable and Chrome can launch, then re-run the audit.",
+      "Verify the site is publicly reachable, then re-run the audit. In serverless mode add a free PSI_API_KEY to raise the PageSpeed Insights quota.",
     evidence: { reason, measurement: "unavailable" },
   };
   return {
@@ -109,6 +109,23 @@ function unavailable(
 }
 
 /**
+ * PageSpeed Insights in serverless mode (no Chromium), local Lighthouse
+ * otherwise. `auto` picks PSI whenever Postgres/serverless mode is active.
+ */
+async function measure(url: string): Promise<LighthouseMetrics> {
+  const usePsi =
+    env.PERFORMANCE_PROVIDER === "psi" ||
+    (env.PERFORMANCE_PROVIDER === "auto" && hasDatabase);
+
+  if (usePsi) {
+    return (await psiSnapshot(url, "mobile")).metrics;
+  }
+
+  const { runLighthouse } = await import("../crawler/lighthouse.js");
+  return runLighthouse(url);
+}
+
+/**
  * Performance analyst (spec §8.4) — Lighthouse on the target only.
  * On any Lighthouse failure (chrome launch, network, 60s timeout) the metrics
  * are unknown: the category is marked unavailable and EXCLUDED from the
@@ -117,7 +134,7 @@ function unavailable(
 export async function analyzePerformance(url: string): Promise<CategoryAnalysis> {
   let metrics: LighthouseMetrics;
   try {
-    metrics = await runLighthouse(url);
+    metrics = await measure(url);
   } catch (err) {
     const reason = err instanceof Error ? err.message : String(err);
     return unavailable(reason, {

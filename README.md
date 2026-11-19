@@ -11,8 +11,8 @@ plus a PDF.
 | ---------- | ------------------------------------------------------------------- |
 | Frontend   | Next.js 14 (App Router), Tailwind CSS, Radix UI                     |
 | Backend    | Fastify 4 + TypeScript (ESM), Zod-validated config                  |
-| Database   | PocketBase 0.40 (SQLite + file storage, single binary)              |
-| Crawling   | Playwright (Chromium) + Lighthouse                                  |
+| Database   | PocketBase 0.40 (SQLite + file storage) **or** Neon Postgres (serverless) |
+| Crawling   | Playwright + Lighthouse (self-host) **or** fetch + cheerio + PageSpeed Insights (serverless) |
 | Analysis   | Gemini free tier (`gemini-4-hydrogen`) via the OpenAI-compatible API, with Ollama Cloud (`glm-5.3-flash`) and Groq (`qwen/qwen3.8-27b`) fallbacks; Serper for SERP; Open PageRank for DA |
 | Monorepo   | pnpm workspaces (`frontend`, `backend`, `packages/shared`)          |
 
@@ -22,8 +22,11 @@ plus a PDF.
 backend/            Fastify API, crawl pipeline, analysts, PocketBase client
   src/index.ts      Server bootstrap: helmet, CORS allowlist, rate limit, health
   src/pipeline.ts   13-stage audit runner with a concurrency cap
-  src/lib/store.ts  PocketBase persistence (payload merge + per-audit write queue)
+  src/lib/store.ts  Audit persistence (Postgres or PocketBase, payload merge + write queue)
+  src/lib/db.ts     Postgres pool + schema (serverless mode switch via DATABASE_URL)
   src/lib/pb.ts     PocketBase auth, file uploads, public file URLs
+  src/crawler/fetch.ts  Chromium-free crawler (fetch + cheerio, PSI/mShots screenshots)
+  src/lib/pdf-server.ts PDFKit report renderer (no browser)
 frontend/           Next.js app (submit URL, poll status, render report)
 packages/shared/    Types + Zod schemas shared by both apps
 ```
@@ -32,8 +35,11 @@ packages/shared/    Types + Zod schemas shared by both apps
 
 - Node.js **>= 20.19**
 - pnpm **9** (`corepack enable` is enough)
-- PocketBase **0.40+**
-- Chromium for Playwright, and Chrome installed for Lighthouse
+- PocketBase **0.40+** (self-host mode only)
+- Chromium for Playwright, and Chrome installed for Lighthouse (self-host mode only)
+
+Serverless mode (Neon Postgres) needs none of PocketBase/Chromium; see
+[`deploy/serverless/README.md`](deploy/serverless/README.md).
 
 ## Setup
 
@@ -90,11 +96,15 @@ pnpm dev        # API on :4000, web on :3000
 | -------------------------- | -------- | ----------------------- | ------------------------------------------------------------ |
 | `PORT`                     | no       | `4000`                  | API port                                                     |
 | `HOST`                     | no       | `0.0.0.0`               | API bind address                                             |
-| `NODE_ENV`                 | no       | `development`           | `production` makes missing PocketBase config fatal           |
+| `NODE_ENV`                 | no       | `development`           | `production` makes a missing audit store fatal               |
 | `POCKETBASE_URL`           | yes      | –                       | e.g. `http://127.0.0.1:8090`                                 |
 | `POCKETBASE_PUBLIC_URL`    | no       | `POCKETBASE_URL`        | Browser-facing URL for screenshot/PDF links                  |
 | `POCKETBASE_ADMIN_EMAIL`   | yes      | –                       | Superuser email                                              |
-| `POCKETBASE_ADMIN_PASSWORD`| yes      | –                       | Superuser password                                           |
+| `POCKETBASE_ADMIN_PASSWORD`| yes      | —                       | Superuser password                                           |
+| `DATABASE_URL`             | no       | —                       | Neon/Postgres string; enables serverless mode (no Chromium)  |
+| `PUBLIC_API_URL`           | no       | `RENDER_EXTERNAL_URL`   | Public API base for screenshot/PDF links                     |
+| `PERFORMANCE_PROVIDER`     | no       | `auto`                  | `auto` = PSI in serverless mode, local Lighthouse otherwise  |
+| `PSI_API_KEY`              | no       | —                       | Free PageSpeed Insights key; raises the anonymous quota      |
 | `WEB_BASE_URL`             | no       | –                       | Used for PDF rendering and as the default CORS origin        |
 | `CORS_ORIGINS`             | no       | `WEB_BASE_URL`          | Comma-separated allowlist, overrides `WEB_BASE_URL`          |
 | `LLM_PROVIDER`             | no       | `auto`                  | `auto` = Gemini → Ollama → Groq, or pin one provider          |
@@ -114,10 +124,14 @@ pnpm dev        # API on :4000, web on :3000
 | `TRUST_PROXY`              | no       | `false`                 | `true` behind a reverse proxy / PaaS load balancer           |
 | `ALLOW_PRIVATE_HOSTS`      | no       | `false`                 | Allow auditing localhost / private IPs (local dev only)       |
 | `MAX_CONCURRENT_AUDITS`    | no       | `2`                     | Global audit concurrency cap (1–50)                          |
+| `AUDIT_TIMEOUT_MS`         | no       | `300000`                | Whole-audit cap; raise it on slow serverless hosts           |
 | `RATE_LIMIT_MAX`           | no       | `5`                     | `POST /audit` requests per window                            |
 | `RATE_LIMIT_WINDOW`        | no       | `1 minute`              | Rate-limit window                                            |
 | `BODY_LIMIT_BYTES`         | no       | `1048576`               | Maximum request body                                         |
 | `NEXT_PUBLIC_API_BASE_URL` | no       | `http://localhost:4000` | Frontend → API base URL                                      |
+
+`POCKETBASE_*` is required **only when `DATABASE_URL` is unset**. With `DATABASE_URL`, the
+API stores audits and files in Postgres and needs no PocketBase.
 
 ### Where to get the optional keys
 
@@ -144,6 +158,8 @@ Paste each key into `backend/.env` and restart the API. Missing keys only warn a
 | `pnpm build`                       | Compile the API, build the Next.js app                |
 | `pnpm --filter backend setup:pb`   | Create the `audits` collection (and raise its JSON size cap) |
 | `pnpm --filter backend test:audit` | Run a full audit against `POCKETBASE_URL`             |
+| `pnpm --filter backend test:crawl-fetch` | Chromium-free crawl smoke test (no PSI quota)  |
+| `pnpm --filter backend test:psi`   | PageSpeed Insights smoke test (needs a working quota) |
 
 ## API
 
@@ -153,7 +169,8 @@ Paste each key into `backend/.env` and restart the API. Missing keys only warn a
 | `GET /audit/:id`  | Poll status, current step, page snapshot, analyses, final report, PDF URL   |
 | `POST /audit/:id/pdf` | Render and return the report PDF (reuses an existing file; 409 until the report exists) |
 | `GET /health`     | Liveness                                                                    |
-| `GET /health/ready` | Readiness: 503 unless PocketBase answers                                  |
+| `GET /health/ready` | Readiness: 503 unless the configured store (Postgres or PocketBase) answers |
+| `GET /files/:auditId/:filename` | Screenshot/PDF bytes — serverless mode only                     |
 
 `GET /audit/:id` is public because it powers the shared report page; writes go through
 the admin-only PocketBase credentials held by the API.
@@ -164,12 +181,12 @@ details never leak. Deliberate 4xx messages (validation, blocked URL, rate limit
 
 ### URL safety
 
-`POST /audit` fetches the submitted URL with a real browser, so the server would otherwise be
-an SSRF proxy into its own network. The API resolves the host and rejects loopback, RFC 1918,
+`POST /audit` fetches the submitted URL server-side (Chromium in self-host mode, `fetch` in
+serverless mode), so the server would otherwise be an SSRF proxy into its own network. The API resolves the host and rejects loopback, RFC 1918,
 link-local (cloud metadata), CGNAT, multicast, unique-local and NAT64 addresses, plus hostnames
 like `localhost` and URLs with embedded credentials. `ALLOW_PRIVATE_HOSTS=true` is a local-dev
 escape hatch for auditing `localhost`; leave it off in production. The check is best-effort:
-the resolved address is not pinned into Playwright, so DNS rebinding can still slip through.
+the resolved address is not pinned into the crawler, so DNS rebinding can still slip through.
 Run the API with no access to cloud metadata endpoints as defence in depth.
 
 ## How an audit runs
@@ -178,8 +195,9 @@ Run the API with no access to cloud metadata endpoints as defence in depth.
 crawl_competitors → onpage → content → offpage → vision → synthesize → pdf`
 
 Independent stages run in parallel. Progress is persisted on every step, so a crash leaves
-the row inspectable instead of silent. Payload writes are serialised per audit id, which
-prevents parallel stages from overwriting each other's keys.
+the row inspectable instead of silent. Payload writes are serialised per audit id in
+PocketBase mode; the Postgres store updates each column directly, so parallel stages never
+overwrite each other.
 
 On boot the API marks any audit left in `pending`/`running` as `failed` with
 `"Interrupted by a server restart"`. The in-process pipeline did not survive the restart, so
@@ -200,6 +218,10 @@ the client would otherwise poll a status that can never change.
 CI (`.github/workflows/ci.yml`) runs install → typecheck → lint → test → build on Node 22.
 
 ## Deploying
+
+**Serverless — PC বন্ধ থাকলেও চলবে, কার্ড ছাড়া:** [`deploy/serverless/README.md`](deploy/serverless/README.md)
+— Neon Postgres + Render Free (API) + Vercel (web)। কোনো Chromium লাগে না: `fetch` crawl,
+PageSpeed Insights, PDFKit।
 
 **PC ছাড়া push-to-deploy:** [`deploy/README.md`](deploy/README.md) — একটাই ফ্রি
 Oracle Always Free VM-এ web + API + PocketBase + Cloudflare Tunnel, আর `main`-এ

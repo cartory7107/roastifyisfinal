@@ -6,6 +6,7 @@ import helmet from "@fastify/helmet";
 import rateLimit from "@fastify/rate-limit";
 
 import { auditRoutes } from "./routes/audit.js";
+import { fileRoutes } from "./routes/files.js";
 import { healthRoutes } from "./routes/health.js";
 import {
   allowedOrigins,
@@ -14,6 +15,7 @@ import {
   hasPocketBaseConfig,
   isProduction,
 } from "./lib/env.js";
+import { ensureSchema, hasDatabase } from "./lib/db.js";
 import { registerErrorHandling } from "./lib/errors.js";
 import { failInterruptedAudits } from "./lib/store.js";
 
@@ -31,8 +33,13 @@ export async function buildServer(): Promise<FastifyInstance> {
   registerErrorHandling(app);
 
   // Security headers for the JSON API; the HTML is served by the frontend app,
-  // so a CSP here would only break the Swagger-less JSON responses.
-  await app.register(helmet, { contentSecurityPolicy: false });
+  // so a CSP here would only break the Swagger-less JSON responses. The
+  // report images are embedded by the Vercel frontend, so resources must be
+  // readable cross-origin.
+  await app.register(helmet, {
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  });
 
   await app.register(cors, {
     origin: allowedOrigins(),
@@ -48,6 +55,7 @@ export async function buildServer(): Promise<FastifyInstance> {
   });
 
   await app.register(healthRoutes);
+  await app.register(fileRoutes);
   await app.register(auditRoutes);
 
   return app;
@@ -63,7 +71,17 @@ async function start(): Promise<void> {
 
   const app = await buildServer();
 
-  if (hasPocketBaseConfig) {
+  if (hasDatabase) {
+    try {
+      await ensureSchema();
+      app.log.info("postgres schema ready");
+    } catch (err) {
+      app.log.error({ err }, "could not prepare the postgres schema");
+      process.exit(1);
+    }
+  }
+
+  if (hasDatabase || hasPocketBaseConfig) {
     try {
       const recovered = await failInterruptedAudits();
       if (recovered > 0) {

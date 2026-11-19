@@ -11,18 +11,9 @@ import {
   MissingPocketBaseConfigError,
   uploadScreenshot,
 } from "../lib/pb.js";
+import { CrawlError } from "./errors.js";
 
-export class CrawlError extends Error {
-  constructor(
-    message: string,
-    readonly url: string,
-    cause?: unknown,
-  ) {
-    super(message);
-    this.name = "CrawlError";
-    this.cause = cause;
-  }
-}
+export { CrawlError } from "./errors.js";
 
 export type ScreenshotMode = "upload" | "local" | "none";
 

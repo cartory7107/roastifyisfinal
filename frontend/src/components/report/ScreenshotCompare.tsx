@@ -75,55 +75,64 @@ export function ScreenshotCompare({
   siteHost,
   className,
 }: ScreenshotCompareProps) {
-  const { target, competitors } = screenshots;
+  const { target } = screenshots;
+  const competitors = screenshots.competitors.filter(
+    (competitor) => competitor.mobile !== "",
+  );
 
   return (
     <div className={cn("space-y-6", className)}>
-      <div>
-        <h3 className="mb-3 text-sm font-semibold">Desktop — your site</h3>
-        <Frame
-          src={target.desktop}
-          label={siteHost ?? "Target"}
-          sublabel="Captured at 1440×900 before the audit ran."
-          tone="target"
-        />
-      </div>
-
-      <div>
-        <h3 className="mb-1 text-sm font-semibold">
-          Mobile — you versus the competitors that outrank you
-        </h3>
-        <p className="mb-3 text-xs text-muted-foreground">
-          Mobile-first layouts decide most of the ranking gap. Compare the fold,
-          the headline, and the primary call to action.
-        </p>
-        <div
-          className={cn(
-            "grid gap-4",
-            competitors.length === 0
-              ? "max-w-xs"
-              : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
-          )}
-        >
+      {target.desktop !== "" ? (
+        <div>
+          <h3 className="mb-3 text-sm font-semibold">Desktop — your site</h3>
           <Frame
-            src={target.mobile}
-            width={390}
-            height={844}
-            label={siteHost ? `${siteHost} (you)` : "Your site"}
+            src={target.desktop}
+            label={siteHost ?? "Target"}
+            sublabel="Captured before the audit ran."
             tone="target"
           />
-          {competitors.map((competitor) => (
-            <Frame
-              key={competitor.url}
-              src={competitor.mobile}
-              width={390}
-              height={844}
-              label={hostOf(competitor.url)}
-              sublabel={competitor.url}
-            />
-          ))}
         </div>
-      </div>
+      ) : null}
+
+      {target.mobile !== "" || competitors.length > 0 ? (
+        <div>
+          <h3 className="mb-1 text-sm font-semibold">
+            Mobile — you versus the competitors that outrank you
+          </h3>
+          <p className="mb-3 text-xs text-muted-foreground">
+            Mobile-first layouts decide most of the ranking gap. Compare the fold,
+            the headline, and the primary call to action.
+          </p>
+          <div
+            className={cn(
+              "grid gap-4",
+              competitors.length === 0
+                ? "max-w-xs"
+                : "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3",
+            )}
+          >
+            {target.mobile !== "" ? (
+              <Frame
+                src={target.mobile}
+                width={390}
+                height={844}
+                label={siteHost ? `${siteHost} (you)` : "Your site"}
+                tone="target"
+              />
+            ) : null}
+            {competitors.map((competitor) => (
+              <Frame
+                key={competitor.url}
+                src={competitor.mobile}
+                width={390}
+                height={844}
+                label={hostOf(competitor.url)}
+                sublabel={competitor.url}
+              />
+            ))}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

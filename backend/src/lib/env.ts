@@ -1,10 +1,12 @@
 import { z } from "zod";
 
+import { hasDatabase } from "./db.js";
+
 /**
  * Runtime configuration, validated once at boot. Optional third-party keys are
  * allowed to be absent — the pipeline degrades gracefully — but a production
- * boot refuses to start without PocketBase, because every audit write would
- * fail anyway.
+ * boot refuses to start without an audit store (Postgres or PocketBase),
+ * because every audit write would fail anyway.
  */
 const optionalUrl = z.preprocess(
   (value) => (value === "" ? undefined : value),
@@ -25,6 +27,19 @@ const EnvSchema = z.object({
   POCKETBASE_PUBLIC_URL: optionalUrl,
   POCKETBASE_ADMIN_EMAIL: optionalString,
   POCKETBASE_ADMIN_PASSWORD: optionalString,
+
+  /**
+   * Serverless mode: a Postgres connection string (Neon free tier) replaces
+   * PocketBase for audit data and files. When set, the pipeline also stops
+   * needing Chromium (fetch crawl + PageSpeed Insights + server-side PDF).
+   */
+  DATABASE_URL: optionalString,
+  /** Public base URL of this API, used for screenshot/PDF links. */
+  PUBLIC_API_URL: optionalUrl,
+  /** `auto` = PageSpeed Insights when DATABASE_URL is set, else local Lighthouse. */
+  PERFORMANCE_PROVIDER: z.enum(["auto", "psi", "lighthouse"]).default("auto"),
+  /** Optional PageSpeed Insights key; raises the anonymous quota. No card needed. */
+  PSI_API_KEY: optionalString,
 
   WEB_BASE_URL: optionalUrl,
   CORS_ORIGINS: optionalString,
@@ -69,6 +84,13 @@ const EnvSchema = z.object({
     .preprocess((value) => value === "true" || value === "1", z.boolean())
     .default(false),
   MAX_CONCURRENT_AUDITS: z.coerce.number().int().min(1).max(50).default(2),
+  /** Whole-run cap. Serverless hosts can need more than the 5-minute default. */
+  AUDIT_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .max(1_800_000)
+    .default(300_000),
   RATE_LIMIT_MAX: z.coerce.number().int().min(1).default(5),
   RATE_LIMIT_WINDOW: z.string().min(1).default("1 minute"),
   BODY_LIMIT_BYTES: z.coerce.number().int().min(1024).default(1_048_576),
@@ -111,6 +133,20 @@ export function pocketBasePublicUrl(): string {
 }
 
 /**
+ * Browser-facing base URL of the API itself. Files stored in Postgres are
+ * served from `/files/...` on this host, so the URL must be reachable by the
+ * browser (Render exposes RENDER_EXTERNAL_URL automatically).
+ */
+export function publicApiUrl(): string {
+  const configured =
+    env.PUBLIC_API_URL ?? process.env.RENDER_EXTERNAL_URL ?? process.env.PUBLIC_URL;
+  if (configured !== undefined && configured.trim() !== "") {
+    return configured.trim().replace(/\/+$/, "");
+  }
+  return `http://127.0.0.1:${env.PORT}`;
+}
+
+/**
  * Turn one configured origin into something `@fastify/cors` can match.
  *
  * A `*` wildcard is allowed so deployments can trust a whole PaaS domain
@@ -142,16 +178,26 @@ export function allowedOrigins(): (string | RegExp)[] {
 }
 
 /**
- * Fail fast on misconfiguration. In production a missing PocketBase config (or
- * a wildcard-less CORS setup in dev) is fatal; optional API keys only warn.
+ * Fail fast on misconfiguration. In production a missing audit store (no
+ * DATABASE_URL and no PocketBase keys) is fatal; optional API keys only warn.
  */
 export function assertBootConfig(log: (message: string) => void): void {
-  if (!hasPocketBaseConfig) {
-    const message = `PocketBase is not configured. Missing env: ${missingPocketBaseKeys().join(
+  if (!hasDatabase && !hasPocketBaseConfig) {
+    const message = `No audit store is configured. Set DATABASE_URL (Postgres/Neon) or the PocketBase keys (missing: ${missingPocketBaseKeys().join(
       ", ",
-    )}. Copy .env.example to .env and fill the PocketBase keys.`;
+    ) || "all"}).`;
     if (isProduction) throw new Error(message);
     log(`[config] ${message}`);
+  }
+
+  if (
+    hasDatabase &&
+    env.PUBLIC_API_URL === undefined &&
+    process.env.RENDER_EXTERNAL_URL === undefined
+  ) {
+    log(
+      "[config] PUBLIC_API_URL is not set — screenshot/PDF links fall back to http://127.0.0.1:PORT and will not load in the browser. Set it to the public API URL.",
+    );
   }
 
   const llmKeyFor = {

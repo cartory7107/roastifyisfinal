@@ -1,8 +1,13 @@
 # Deploying the web app on Vercel
 
 The repository is a pnpm monorepo. Only `frontend/` is deployed to Vercel; the
-audit engine (Fastify + Chromium + Lighthouse + PocketBase) runs on a machine
-that can execute a real browser and keep a disk.
+audit engine (Fastify) runs elsewhere — on Render Free in serverless mode
+([`deploy/serverless/README.md`](deploy/serverless/README.md)) or on a machine
+with Chromium and PocketBase.
+
+In serverless mode point Vercel's `NEXT_PUBLIC_API_BASE_URL` at the Render URL,
+for example `https://rostify-api.onrender.com`. Vercel environment variables
+override the committed `frontend/.env.production` fallback.
 
 ```
 Browser ─── https://roastifys.cartory.top (Vercel) ───┐

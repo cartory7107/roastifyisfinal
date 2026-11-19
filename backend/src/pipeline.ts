@@ -19,7 +19,9 @@ import { analyzePerformance } from "./analysts/performance.js";
 import { synthesizeReport } from "./analysts/synthesizer.js";
 import { analyzeTechnical } from "./analysts/technical.js";
 import { analyzeVision } from "./analysts/vision.js";
-import { crawlUrl } from "./crawler/playwright.js";
+import { crawlUrl as crawlWithBrowser } from "./crawler/playwright.js";
+import { crawlUrl as crawlWithFetch } from "./crawler/fetch.js";
+import { hasDatabase } from "./lib/db.js";
 import { renderReportPdf } from "./lib/pdf.js";
 import {
   fetchSerpSnapshot,
@@ -36,9 +38,10 @@ const auditLimiter = pLimit(env.MAX_CONCURRENT_AUDITS);
  * Hard limit for the whole run. A real site (crawl + Lighthouse + two
  * competitor crawls + vision + synthesis + PDF) regularly needs more than the
  * three minutes the spec assumed, and killing it at the very end threw away a
- * complete report — so the cap is five minutes.
+ * complete report — so the cap defaults to five minutes. A slow serverless
+ * host can raise it with `AUDIT_TIMEOUT_MS`.
  */
-const AUDIT_TIMEOUT_MS = 300_000;
+const AUDIT_TIMEOUT_MS = env.AUDIT_TIMEOUT_MS;
 
 /** The PDF is a nice-to-have: bound it separately so it can never kill a report. */
 const PDF_STAGE_TIMEOUT_MS = 120_000;
@@ -110,6 +113,33 @@ function competitorLabel(url: string): string {
   }
 }
 
+type CrawlRequest = {
+  auditId: string;
+  label: string;
+  /** Screenshots are optional; PageSpeed quotas are spent on the target only. */
+  screenshots: boolean;
+};
+
+/**
+ * Serverless mode crawls with `fetch` and takes screenshots from PageSpeed
+ * Insights; the PocketBase path keeps the full Chromium crawler.
+ */
+function crawlPage(url: string, options: CrawlRequest): Promise<CrawlData> {
+  if (hasDatabase) {
+    return crawlWithFetch(url, {
+      auditId: options.auditId,
+      label: options.label,
+      screenshots: options.screenshots,
+    });
+  }
+
+  return crawlWithBrowser(url, {
+    auditId: options.auditId,
+    label: options.label,
+    screenshotMode: "upload",
+  });
+}
+
 /**
  * Crawl the competitors in parallel (spec §13 phase 7). A competitor that
  * fails to load is dropped — content and off-page analysis still work with
@@ -121,10 +151,10 @@ async function crawlCompetitors(
 ): Promise<CrawlData[]> {
   const settled = await Promise.allSettled(
     competitors.map((competitor) =>
-      crawlUrl(competitor.url, {
+      crawlPage(competitor.url, {
         auditId,
         label: competitorLabel(competitor.url),
-        screenshotMode: "upload",
+        screenshots: false,
       }),
     ),
   );
@@ -171,15 +201,15 @@ async function execute(auditId: string, startedAt: number): Promise<void> {
 
   await updateAudit(auditId, { status: "running" });
 
-  // A — crawl the target (screenshots upload to PocketBase).
+  // A — crawl the target (screenshots upload to the audit store).
   const target = await stage(
     auditId,
     "crawl_target",
     () =>
-      crawlUrl(row.target_url, {
+      crawlPage(row.target_url, {
         auditId,
         label: "target",
-        screenshotMode: "upload",
+        screenshots: true,
       }),
     (data) => ({ crawl_data: { target: data, competitors: [] } satisfies CrawlBundle }),
   );
