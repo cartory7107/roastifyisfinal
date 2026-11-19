@@ -14,7 +14,7 @@ services:
     healthCheckPath: /health
     # pnpm is pinned in package.json (`packageManager`), so npx gives the exact
     # version without relying on a globally installed pnpm.
-    buildCommand: npx --yes pnpm@9.15.9 install --frozen-lockfile && npx --yes pnpm@9.15.9 --filter backend build
+    buildCommand: npx --yes pnpm@9.15.9 install --prod=false --frozen-lockfile && npx --yes pnpm@9.15.9 --filter backend build
     # Serverless mode needs no Chromium: crawl = fetch + cheerio,
     # performance = PageSpeed Insights, PDF = PDFKit.
     startCommand: node backend/dist/index.js
