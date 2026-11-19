@@ -35,7 +35,7 @@ services:
         value: "600000"
       # Browser origins allowed to call the API (comma separated).
       - key: CORS_ORIGINS
-        value: https://roastifyrs.vercel.app,https://*.vercel.app,https://app.cartory.top
+        value: https://roastifyrs.vercel.app,https://*.vercel.app,https://*.cartory.top,https://cartory.top
       # --- required: paste the Neon connection string -----------------------
       - key: DATABASE_URL
         sync: false

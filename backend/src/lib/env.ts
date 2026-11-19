@@ -159,7 +159,7 @@ export function compileOriginPattern(origin: string): string | RegExp {
   const escaped = origin
     .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
     .replace(/\\\*/g, ".*");
-  return new RegExp(`^${escaped}$`);
+  return new RegExp(`^${escaped}$`, "i");
 }
 
 /** CORS allowlist: explicit `CORS_ORIGINS`, else the web app's origin. */
